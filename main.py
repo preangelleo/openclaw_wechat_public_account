@@ -106,6 +106,7 @@ def publish_article_endpoint(request: PublishRequest):
             cover_image_index=final_cover_index,
             content_source_url=request.content_source_url,
             preview_wxname=request.preview_wxname,
+            preview_email=request.preview_email,
             auto_publish=request.auto_publish
         )
         
