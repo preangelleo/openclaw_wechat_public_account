@@ -1,0 +1,20 @@
+services:
+  wechat-publisher:
+    build: .
+    container_name: wechat-publisher
+    ports:
+      - "5015:5015"
+    environment:
+      - REDIS_URL=redis://animagent-redis:6379
+    env_file:
+      - .env
+    networks:
+      - animagent-process_animagent-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: unless-stopped
+
+networks:
+  animagent-process_animagent-network:
+    external: true

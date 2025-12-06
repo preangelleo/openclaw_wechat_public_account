@@ -1,0 +1,14 @@
+
+# Environment & Secrets
+.env
+.DS_Store
+*.pem
+access_token.json
+
+# Cache & Logs
+__pycache__/
+*.py[cod]
+api_log.txt
+
+# OS
+.DS_Store
