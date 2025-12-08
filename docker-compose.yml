@@ -8,13 +8,15 @@ services:
       - REDIS_URL=redis://animagent-redis:6379
     env_file:
       - .env
-    networks:
-      - animagent-process_animagent-network
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
     restart: unless-stopped
+    networks:
+      - animagent-network
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5015/health')\" || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
-  animagent-process_animagent-network:
+  animagent-network:
     external: true

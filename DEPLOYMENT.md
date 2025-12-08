@@ -28,24 +28,33 @@ ANIMAGENT_GMAIL_PASSWORD=gqkwepafxcjdaiqr
 WECHAT_ID=betashow
 ```
 
-## 2. Docker Deployment
+## 2. Deployment Steps
 
-The service runs within the `animagent-network` to share the Redis instance.
-
-### Build and Run
+### Step 1: Sync Code to Server
 ```bash
-# SSH into Server
-ssh -i "credentials/animagent.pem" ubuntu@animagent.ai
+rsync -avz --exclude '.git' --exclude '__pycache__' --exclude 'venv' --exclude '.env' \
+    -e "ssh -i /Users/lgg/coding/credentials/animagent.pem" \
+    /Users/lgg/coding/wechat/wechat-public-account ubuntu@animagent.ai:~/wechat/
+```
 
-# Navigate to Dir
-cd /home/ubuntu/wechat-public-account
+### Step 2: Configure Environment
+SSH into the server and ensure `.env` is configured.
+```bash
+ssh -i "/Users/lgg/coding/credentials/animagent.pem" ubuntu@animagent.ai
+cd ~/wechat/wechat-public-account
+# Ensure .env exists with required keys
+docker compose up -d --build
+```
 
-# Rebuild and Restart
-docker-compose up -d --build
+### Step 3: Verify Deployment
+```bash
+docker logs -f wechat-publisher
+# Check Health
+curl http://localhost:5015/health
 ```
 
 ### Network Integration
-Ensure the `animagent-network` exists (created by the main `animagent-process` stack). The service attaches to it as `external: true`.
+Service uses `animagent-network` (external). Port: `5015`.
 
 ## 3. Maintenance
 
