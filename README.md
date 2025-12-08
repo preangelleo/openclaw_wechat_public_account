@@ -9,8 +9,9 @@ For a deep dive into the internal logic, state machines, and detailed workflows 
 
 ### Endpoint
 - **Internal (Docker Network)**: `http://wechat-publisher:5015/publish`
-- **External (Public)**: `http://animagent.ai/api/weixin-publish` (Requires Reverse Proxy setup)
+- **External (Public)**: `https://animagent.ai/api/weixin-publish` (Configured via Nginx)
 - **Method**: `POST`
+- **Internal (Docker)**: `http://wechat-publisher:5015`
 
 ### Authentication
 **Header Required**:
