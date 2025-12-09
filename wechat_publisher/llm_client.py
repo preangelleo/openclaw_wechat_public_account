@@ -39,7 +39,7 @@ class LLMClient:
 
         system_prompt = """
         You are an expert WeChat Official Account editor.
-        Your task is to convert the provided Markdown article into a structured JSON format that can be easily rendered into WeChat-compatible HTML.
+        Your task is to convert the provided Markdown article into a structured JSON format that can be easily rendered into WeChat-compatible HTML. Do not concise, brievy or omit any content.
         
         Rules:
         1. Parse Headers (h1, h2, h3) -> type: "header", level: 1/2/3.
@@ -58,11 +58,7 @@ class LLMClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": article_markdown}
             ],
-            # Google Gemini 2.5 Flash on OpenRouter supports structured output via json_schema (or just response_format in some adapters).
-            # We will try the standard 'json_object' mode or response_format depending on provider support.
-            # OpenRouter's support for 'json_schema' might vary by underlying provider implementation. 
-            # safe bet: prompt for JSON and use "response_format": {"type": "json_object"} if supported.
-            # The user provided a specific schema-based payload example. We'll follow that.
+
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {

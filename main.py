@@ -6,7 +6,7 @@ from typing import List, Optional, Union
 import logging
 import os
 from dotenv import load_dotenv
-from wechat_publisher import wechat_public_article
+from wechat_publisher import wechat_public_article, wechat_media_publish, draft_manager
 
 # Load env for ADMIN_API_KEY
 load_dotenv()
@@ -17,8 +17,8 @@ logger = logging.getLogger("wechat_service")
 
 app = FastAPI(
     title="WeChat Public Account Publisher API",
-    description="API for automating article publishing to WeChat Official Accounts.",
-    version="1.0.0"
+    description="API for automating content publishing to WeChat Official Accounts.",
+    version="2.0.0"
 )
 
 # Auth Configuration
@@ -26,13 +26,8 @@ API_KEY_NAME = "X-Admin-Api-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 def get_api_key(api_key_header: str = Security(api_key_header)):
-    """
-    Validates the ADMIN_API_KEY from the header.
-    """
     expected_key = os.getenv("ADMIN_API_KEY")
     if not expected_key:
-        # If no key configured, we might want to warn or fail open/closed.
-        # Closing is safer.
         logger.error("ADMIN_API_KEY not found in environment!")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -48,53 +43,52 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
     )
 
 class ImageItem(BaseModel):
-    image_index: int = Field(..., description="Index of the image in the sequence.")
-    image_type: str = Field(..., pattern="^(url|base64)$", description="Type of image source: 'url' or 'base64'.")
-    image_url: Optional[str] = Field(None, description="Public URL of the image (required if type='url').")
-    image_base64: Optional[str] = Field(None, description="Base64 encoded string of the image (required if type='base64').")
-    image_alt: Optional[str] = Field(None, description="Alt text for the image.")
+    image_index: int = Field(0, description="Index of the image.")
+    image_type: str = Field(..., pattern="^(url|base64|path)$", description="Source type.")
+    image_url: Optional[str] = None
+    image_base64: Optional[str] = None
+    media_path: Optional[str] = None # Support local path (for docker mapped volumes)
+    image_alt: Optional[str] = None
 
 class PublishRequest(BaseModel):
-    article_markdown: str = Field(..., description="Markdown content of the article. Use tags like 'image_1' for image placement.")
-    images_list: List[ImageItem] = Field(..., description="List of images referenced in the markdown.")
-    title: str = Field(..., description="Title of the article.")
-    author: str = Field("Animagent", description="Author name displayed in WeChat.")
-    digest: str = Field("", description="Short summary/digest displayed in the article list.")
-    cover_image_index: int = Field(1, description="Index of the image to be used as the cover thumbnail.")
-    content_source_url: str = Field("", description="Original Article Link.")
-    auto_publish: bool = Field(False, description="Whether to publish directly.")
-    preview_wxname: str = Field("", description="WeChat ID to send preview to.")
-    preview_email: str = Field("", description="Email address to send preview & approve link.")
+    article_markdown: str = Field(..., description="Markdown content.")
+    images_list: List[ImageItem] = Field(..., description="List of images.")
+    title: str = Field(..., description="Title.")
+    author: str = Field("Animagent", description="Author.")
+    digest: str = Field("", description="Summary.")
+    cover_image_index: int = Field(1, description="Cover Image Index.")
+    content_source_url: str = Field("", description="Source Link.")
+    auto_publish: bool = Field(False, description="Publish immediately?")
+    preview_wxname: str = Field("", description="Preview WeChat ID.")
+    preview_email: str = Field("", description="Preview Email.")
+    use_llm_parser: bool = Field(False, description="Use LLM for parsing? Default False (Regex).")
+
+class MediaPublishRequest(BaseModel):
+    media_type: str = Field(..., pattern="^(image|video|voice)$", description="Media Type.")
+    media_source: ImageItem = Field(..., description="Media source info (url/base64/path).")
+    title: str = Field("", description="Video Title (Required for Video).")
+    introduction: str = Field("", description="Video Intro (Required for Video).")
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2.0.0"}
 
 @app.post("/publish", dependencies=[Depends(get_api_key)])
 def publish_article_endpoint(request: PublishRequest):
     """
-    Publishes an article to WeChat Public Account (Draft).
-    Requires 'ADMIN_API_KEY' header for authentication.
+    Publishes an Article (Draft).
     """
-    logger.info(f"Received Publish Request: {request.title}")
+    logger.info(f"Received Article Publish Request: {request.title}")
     
-    # Validation: Check image list
+    # Validation logic (Cover must exist)
     if not request.images_list:
-        raise HTTPException(status_code=400, detail="images_list cannot be empty. At least one image (Index 1) is required for Cover.")
+        raise HTTPException(status_code=400, detail="images_list cannot be empty.")
 
-    # Enforce Rule: Index 1 must exist (it is the Cover)
-    img_indices = [img.image_index for img in request.images_list]
-    if 1 not in img_indices:
-        raise HTTPException(status_code=400, detail="Image Index 1 is missing. It is required for the Cover Image.")
-
-    # Enforce Rule: Cover Image is ALWAYS Index 1
-    # We ignore the user's cover_image_index if provided, or validate it.
-    # The user instruction was "First one is cover... fix the rule".
-    # So we force cover_image_index to 1.
-    final_cover_index = 1
-
+    # Force Cover Index to 1 if user logic requires it, or respect input?
+    # User said "image_1 and image_10 replace issue". 
+    # Let's trust the input cover_image_index but validation is good.
+    
     try:
-        # Convert Pydantic models to dicts for SDK
         images_data = [img.dict() for img in request.images_list]
         
         result = wechat_public_article(
@@ -103,11 +97,12 @@ def publish_article_endpoint(request: PublishRequest):
             title=request.title,
             author=request.author,
             digest=request.digest,
-            cover_image_index=final_cover_index,
+            cover_image_index=request.cover_image_index,
             content_source_url=request.content_source_url,
             preview_wxname=request.preview_wxname,
             preview_email=request.preview_email,
-            auto_publish=request.auto_publish
+            auto_publish=request.auto_publish,
+            use_llm_parser=request.use_llm_parser
         )
         
         if not result['status']:
@@ -119,30 +114,44 @@ def publish_article_endpoint(request: PublishRequest):
         logger.error(f"Publish Endpoint Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/publish/media", dependencies=[Depends(get_api_key)])
+def publish_media_endpoint(request: MediaPublishRequest):
+    """
+    Publishes Standalone Media (Image, Video, Voice) to Permanent Material.
+    """
+    logger.info(f"Received Media Publish Request: {request.media_type}")
+    
+    try:
+        media_data = request.media_source.dict()
+        
+        result = wechat_media_publish(
+            media_type=request.media_type,
+            media_data=media_data,
+            title=request.title,
+            introduction=request.introduction
+        )
+        
+        if not result['status']:
+             raise HTTPException(status_code=500, detail=result.get('message'))
+             
+        return result
+
+    except Exception as e:
+        logger.error(f"Media Endpoint Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/approve")
 async def approve_publish(media_id: str, key: str):
-    """
-    Endpoint for One-Click Publish via Email.
-    """
-    # Simple security check
-    # In production, use a rotating token or DB-stored nonce. 
-    # For personal MVP, a fixed secret from .env is acceptable.
-    EXPECTED_KEY = "secret_approval_key" # Should be sync with publisher.py
-    
+    EXPECTED_KEY = "secret_approval_key"
     if key != EXPECTED_KEY:
          return {"status": "error", "message": "Invalid Approval Key"}
          
     try:
         publish_id = draft_manager.publish_draft(media_id)
-        return {
-            "status": "success", 
-            "message": "Article Published Successfully!", 
-            "publish_id": publish_id
-        }
+        return {"status": "success", "publish_id": publish_id}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
-    # Allow port to be configured via env or default to 5015
     uvicorn.run(app, host="0.0.0.0", port=5015)

@@ -4,6 +4,7 @@ import base64
 import os
 import logging
 import io
+import mimetypes
 from PIL import Image
 from typing import Dict, Optional, Union, List
 from .token_manager import token_manager
@@ -16,44 +17,52 @@ class MediaClient:
     def __init__(self, redis_url=REDIS_URL):
         self.redis_client = redis.from_url(redis_url)
         self.url_map_key = "wechat_media_url_map" # Map hash -> wechat_url (for body images)
-        self.media_id_map_key = "wechat_media_id_map" # Map hash -> media_id (for permanent material)
+        self.media_id_map_key = "wechat_media_id_map" # Map hash -> media_id (for permanent materials)
 
-    def _get_image_content(self, image_data: Dict) -> bytes:
+    def _get_bytes_content(self, media_data: Dict) -> bytes:
         """
-        Extracts image bytes from the input dictionary (url or base64).
+        Extracts bytes from the input dictionary (url or base64 or path).
+        Supports 'type': 'url' | 'base64' | 'path'
         """
-        img_type = image_data.get('image_type')
-        
-        if img_type == 'base64':
-            b64_str = image_data.get('image_base64')
+        src_type = media_data.get('type', 'base64') # default to base64 if not specified, legacy support
+        # legacy check: if 'image_type' serves as type
+        if 'image_type' in media_data:
+            src_type = media_data['image_type']
+            
+        if src_type == 'base64':
+            # Support both 'image_base64' and 'media_base64' keys
+            b64_str = media_data.get('image_base64') or media_data.get('media_base64')
+            if not b64_str:
+                raise ValueError("Missing base64 data")
             if ',' in b64_str:
                 b64_str = b64_str.split(',')[1]
             return base64.b64decode(b64_str)
             
-        elif img_type == 'url':
-            url = image_data.get('image_url')
-            resp = requests.get(url, timeout=30)
+        elif src_type == 'url':
+            url = media_data.get('image_url') or media_data.get('media_url')
+            if not url: raise ValueError("Missing URL")
+            resp = requests.get(url, timeout=60)
             resp.raise_for_status()
             return resp.content
             
+        elif src_type == 'path':
+             path = media_data.get('media_path')
+             if not path or not os.path.exists(path):
+                 raise ValueError(f"File path not found: {path}")
+             with open(path, 'rb') as f:
+                 return f.read()
         else:
-            raise ValueError(f"Unsupported image_type: {img_type}")
+            raise ValueError(f"Unsupported media source type: {src_type}")
 
     def _calculate_hash(self, content: bytes) -> str:
         return hashlib.md5(content).hexdigest()
 
     def _compress_image(self, content: bytes, max_size_mb=2, quality=85) -> bytes:
-        """
-        Simple compression if image is too large. WeChat limit is usually 2MB or 10MB depending on type.
-        We aim for <2MB to be safe.
-        """
         if len(content) <= max_size_mb * 1024 * 1024:
             return content
-            
         image = Image.open(io.BytesIO(content))
         if image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
-            
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=quality)
         return output.getvalue()
@@ -63,23 +72,16 @@ class MediaClient:
         Uploads an image to be used INSIDE the article body.
         Returns the WeChat URL (http://mmbiz.qpic.cn/...).
         """
-        content = self._get_image_content(image_data)
+        content = self._get_bytes_content(image_data)
         content_hash = self._calculate_hash(content)
         
-        # Check cache
         cached_url = self.redis_client.hget(self.url_map_key, content_hash)
         if cached_url:
-            logger.info(f"Image hit cache: {content_hash}")
             return cached_url.decode('utf-8')
 
-        # Compress if needed (WeChat limitation)
         content = self._compress_image(content)
-
-        # Upload
         token = token_manager.get_token()
         url = f"https://api.weixin.qq.com/cgi-bin/media/uploadimg?access_token={token}"
-        
-        # WeChat expects 'media' field
         files = {'media': ('image.jpg', content, 'image/jpeg')}
         
         resp = requests.post(url, files=files, timeout=60)
@@ -89,29 +91,88 @@ class MediaClient:
              raise Exception(f"Failed to upload image: {data}")
              
         wechat_url = data["url"]
-        
-        # Cache result
         self.redis_client.hset(self.url_map_key, content_hash, wechat_url)
-        
         return wechat_url
 
+    def upload_permanent_material(self, media_data: Dict, material_type: str = "image", title: str = "", introduction: str = "") -> str:
+        """
+        General function to upload permanent materials (image, voice, video, thumb).
+        Video requires title and introduction.
+        """
+        content = self._get_bytes_content(media_data)
+        content_hash = self._calculate_hash(content)
+        
+        # Determine Cache Prefix to separate Image/Video/Voice namespaces in same hash map?
+        # Or just mix them. Hash is MD5 of content, so collision is unlikely unless content identic.
+        # But wait, video needs extra fields (title/intro), if those change, hash of content is same but output different?
+        # WeChat Permanent Video doesn't update metadata easily. We will cache by CONTENT hash only for now.
+        
+        cached_id = self.redis_client.hget(self.media_id_map_key, content_hash)
+        if cached_id:
+             logger.info(f"Material hit cache: {content_hash}")
+             return cached_id.decode('utf-8')
+
+        token = token_manager.get_token()
+        url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type={material_type}"
+        
+        # Prepare Files
+        filename = "media.bin"
+        if material_type == "image" or material_type == "thumb":
+             filename = "image.jpg"
+             content = self._compress_image(content) # Compress images only
+             mime = "image/jpeg"
+        elif material_type == "voice":
+             filename = "voice.mp3"
+             mime = "audio/mpeg"
+        elif material_type == "video":
+             filename = "video.mp4"
+             mime = "video/mp4"
+
+        files = {'media': (filename, content, mime)}
+        payload = {}
+        
+        if material_type == "video":
+            import json
+            description = {
+                "title": title or "Video Title",
+                "introduction": introduction or "Video Introduction"
+            }
+            # WeChat requires 'description' field as JSON string for video
+            payload = {"description": json.dumps(description, ensure_ascii=False)}
+
+        try:
+            resp = requests.post(url, files=files, data=payload, timeout=300) # Longer timeout for video
+            data = resp.json()
+
+            if "media_id" in data:
+                 media_id = data["media_id"]
+                 self.redis_client.hset(self.media_id_map_key, content_hash, media_id)
+                 return media_id
+            
+            # Error Handling: Check for validation errors
+            if data.get("errcode") in [45001, 88000]: # Capacity full
+                 logger.warning(f"Upload failed (Capacity). Attempting cleanup.")
+                 self.cleanup_oldest_materials(5)
+                 # Retry
+                 resp = requests.post(url, files={'media': (filename, content, mime)}, data=payload, timeout=300)
+                 data = resp.json()
+                 if "media_id" in data:
+                      return data["media_id"]
+
+            raise Exception(f"Failed to upload {material_type}: {data}")
+
+        except Exception as e:
+            raise e
+
     def get_material_count(self) -> int:
-        """
-        Returns the total count of permanent image materials.
-        """
         token = token_manager.get_token()
         url = f"https://api.weixin.qq.com/cgi-bin/material/get_materialcount?access_token={token}"
         resp = requests.get(url, timeout=30)
         data = resp.json()
-        if "image_count" not in data:
-            logger.warning(f"Failed to get material count: {data}")
-            return 0
-        return data["image_count"]
+        if "image_count" not in data: return 0
+        return data["image_count"] # Just image count for cleaning strategy
 
     def batch_get_materials(self, offset: int, count: int) -> List[str]:
-        """
-        Returns a list of media_ids from the batch request.
-        """
         token = token_manager.get_token()
         url = f"https://api.weixin.qq.com/cgi-bin/material/batchget_material?access_token={token}"
         payload = {
@@ -121,7 +182,6 @@ class MediaClient:
         }
         resp = requests.post(url, json=payload, timeout=30)
         data = resp.json()
-        
         media_ids = []
         if "item" in data:
             for item in data["item"]:
@@ -129,9 +189,6 @@ class MediaClient:
         return media_ids
 
     def delete_material(self, media_id: str):
-        """
-        Deletes a permanent material by media_id.
-        """
         token = token_manager.get_token()
         url = f"https://api.weixin.qq.com/cgi-bin/material/del_material?access_token={token}"
         payload = {"media_id": media_id}
@@ -139,109 +196,33 @@ class MediaClient:
         logger.info(f"Deleted material: {media_id}")
 
     def cleanup_oldest_materials(self, count_to_delete=5):
-        """
-        Deletes the oldest N images to free up space.
-        """
         total_count = self.get_material_count()
-        if total_count == 0:
-            return
-
-        # Strategy: Oldest images are at the end of the list if default sort is newest-first?
-        # Verification needed: WeChat APIs usually return list in reverse chronological order (newest first).
-        # So oldest items are at offset = total_count - count
-        
+        if total_count == 0: return
         offset = max(0, total_count - count_to_delete - 1)
-        # Fetch a batch from the end
-        media_ids = self.batch_get_materials(offset, count_to_delete + 5) # Fetch a few more to be safe
-        
-        # Determine actual items to delete (take the last ones if list is ordered new->old, wait)
-        # If list is New -> Old (Index 0 is Newest), then Index [Total-1] is Oldest.
-        # So fetching from offset [Total - N] gets the Oldest.
-        
+        media_ids = self.batch_get_materials(offset, count_to_delete + 5)
         for mid in media_ids[:count_to_delete]:
             self.delete_material(mid)
 
-    def upload_permanent_material(self, image_data: Dict) -> str:
-        """
-        Uploads an image as permanent material (e.g. for Cover).
-        Returns the media_id.
-        Auto-cleans old materials if storage is full.
-        """
-        content = self._get_image_content(image_data)
-        content_hash = self._calculate_hash(content)
-        
-        # Check cache
-        cached_id = self.redis_client.hget(self.media_id_map_key, content_hash)
-        if cached_id:
-             logger.info(f"Material hit cache: {content_hash}")
-             return cached_id.decode('utf-8')
-             
-        # Compress
-        content = self._compress_image(content)
-        
+    def upload_temporary_material(self, media_data: Dict, material_type="image") -> str:
+        content = self._get_bytes_content(media_data)
+        if material_type == "image":
+            content = self._compress_image(content)
+            
         token = token_manager.get_token()
-        url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type=image"
-        files = {'media': ('cover.jpg', content, 'image/jpeg')}
+        url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type={material_type}"
         
-        try:
-            resp = requests.post(url, files=files, timeout=60)
-            data = resp.json()
-            
-            # Check for specific error codes for "Full"
-            # 45001: Source file size exceeded (not quota, but maybe size limit?)
-            # 48001: api unauthorized (permissions)
-            # Quota full error is typically not explicitly strictly documented as consistent 
-            # but usually fails with errcode != 0
-            
-            if "media_id" in data:
-                 media_id = data["media_id"]
-                 self.redis_client.hset(self.media_id_map_key, content_hash, media_id)
-                 return media_id
-            
-            # Error Handling Pattern
-            err_code = data.get("errcode")
-            # Assuming 45001 or general failure might be capacity. 
-            # We aggressively try cleanup if it looks like a resource limit.
-            if err_code in [45001, 88000]: # 88000 is example, 45001 sometimes used for capacity issues broadly or specific size.
-                 logger.warning(f"Upload failed with code {err_code}. Attempting cleanup and retry...")
-                 self.cleanup_oldest_materials(5)
-                 
-                 # Retry once
-                 resp = requests.post(url, files={'media': ('cover.jpg', content, 'image/jpeg')}, timeout=60)
-                 data = resp.json()
-                 if "media_id" in data:
-                      return data["media_id"]
-            
-            # If still failing or other error
-            raise Exception(f"Failed to upload material: {data}")
+        filename = "temp.bin"
+        mime = "application/octet-stream"
+        if material_type == "image": filename, mime = "temp.jpg", "image/jpeg"
+        elif material_type == "voice": filename, mime = "temp.mp3", "audio/mpeg"
+        elif material_type == "video": filename, mime = "temp.mp4", "video/mp4"
 
-        except Exception as e:
-            # If it's a "quota full" guessed exception structure, we could catch it here too.
-            # But the JSON check above handles API errors.
-            raise e
-
-    def upload_temporary_material(self, image_data: Dict) -> str:
-        """
-        Uploads an image as temporary material (expires in 3 days).
-        Useful as fallback if permanent material quota is full or unauthorized.
-        """
-        content = self._get_image_content(image_data)
-        # Compress
-        content = self._compress_image(content)
-        
-        token = token_manager.get_token()
-        url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type=image"
-        
-        files = {'media': ('cover_temp.jpg', content, 'image/jpeg')}
-        
+        files = {'media': (filename, content, mime)}
         resp = requests.post(url, files=files, timeout=60)
         data = resp.json()
         
         if "media_id" not in data:
             raise Exception(f"Failed to upload temporary material: {data}")
-            
-        # We generally don't cache temporary media IDs long-term because they expire.
-        # But for valid duration we could. For now, no caching.
         return data["media_id"]
 
 media_client = MediaClient()
