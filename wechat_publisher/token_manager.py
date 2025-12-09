@@ -44,7 +44,7 @@ class TokenManager:
                 logger.warning(f"Redis get failed: {e}")
 
         # 3. Fetch New
-        return self._refresh_token()
+        return self.refresh_token()
 
     def _load_token_from_file(self) -> str:
         if not os.path.exists(self.token_file):
@@ -78,7 +78,7 @@ class TokenManager:
         except Exception as e:
             logger.warning(f"Failed to save token file: {e}")
 
-    def _refresh_token(self) -> str:
+    def refresh_token(self) -> str:
         url = "https://api.weixin.qq.com/cgi-bin/token"
         params = {
             "grant_type": "client_credential",

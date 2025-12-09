@@ -44,12 +44,15 @@ class LLMClient:
         Rules:
         1. Parse Headers (h1, h2, h3) -> type: "header", level: 1/2/3.
         2. Parse Paragraphs -> type: "paragraph".
-        3. Parse Images encoded as `image_{index}` in the text -> type: "image", content: "image_{index}".
+        3. Parse Images encoded as `image_{index}`:
+           - CRITICAL: Images MUST be extracted as their own individual JSON objects with type="image".
+           - CRITICAL: Do NOT leave "image_{index}" inside a paragraph content string. Break the paragraph before and after the image.
+           - Example: "Text... image_1 ...Text" -> Paragraph("Text..."), Image(index=1), Paragraph("...Text").
         4. Parse Lists -> type: "list", content: inner HTML `<ul>/<li>` string. IMPORTANT: Do not include newlines between `<li>` tags. Output compact HTML.
         5. Parse Blockquotes -> type: "quote".
         6. Parse Tables -> type: "table", content: valid HTML `<table>` string with simple inline styles (border, padding).
         7. Keep the content clean. Remove markdown symbols like ## or ** in the content field, apply them as structural meaning.
-        8. For "image_{index}", strictly preserve the exact string "image_{index}" in the content field.
+        8. For "image_{index}", set the 'index' field to the integer N.
         """
 
         payload = {

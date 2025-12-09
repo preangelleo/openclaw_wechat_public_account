@@ -84,6 +84,16 @@ class DraftManager:
 
             elif item_type == "table":
                  html_parts.append(f'<div style="margin: 20px 0; overflow-x: auto;">{content}</div>')
+
+            elif item_type == "video":
+                 # Video Embedding
+                 # Ideally, we need a media_id or a vid.
+                 # If content is a URL or media_id, we can try to render.
+                 # For now, just a placeholder or link.
+                 if content.startswith("http"):
+                     html_parts.append(f'<p style="text-align: center;"><a href="{content}">Watch Video</a></p>')
+                 else:
+                     html_parts.append(f'<p style="text-align: center; color: #888;">[Video: {content}]</p>')
         
         html_parts.append('</div>')
         return "".join(html_parts)

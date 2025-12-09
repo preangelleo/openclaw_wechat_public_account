@@ -1,6 +1,6 @@
 # WeChat Public Account Publisher Service
 
-A microservice to automate publishing "image-text" articles (Drafts) to a WeChat Official Account. It provides a RESTful API secured by an Admin API Key and supports deployment via Docker.
+A microservice to automate publishing "image-text" articles (Drafts) and multimedia assets to a WeChat Official Account. It provides a RESTful API secured by an Admin API Key and supports deployment via Docker.
 
 ## 📚 Documentation
 For a deep dive into the internal logic, state machines, and detailed workflows (including the "Email Approval" flow vs "Direct Publish"), please refer to [`process_logic.md`](./process_logic.md).
@@ -8,10 +8,9 @@ For a deep dive into the internal logic, state machines, and detailed workflows 
 ## 1. API Usage
 
 ### Endpoint
+- **External (Public)**: `https://animagent.ai/api/weixin-publish/publish`
 - **Internal (Docker Network)**: `http://wechat-publisher:5015/publish`
-- **External (Public)**: `https://animagent.ai/api/weixin-publish` (Configured via Nginx)
 - **Method**: `POST`
-- **Internal (Docker)**: `http://wechat-publisher:5015`
 
 ### Authentication
 **Header Required**:
@@ -19,138 +18,170 @@ For a deep dive into the internal logic, state machines, and detailed workflows 
 
 (Value can be found in `.env` as `ADMIN_API_KEY`)
 
-```
+## 2. API Reference
 
-## 2. Integration Examples
+The service exposes a **Unified Endpoint** `POST /publish` that handles different types of publishing based on the `publish_type` parameter.
 
-### Python (via `requests`)
-
-```python
-import requests
-import json
-
-url = "http://animagent.ai/api/weixin-publish"
-api_key = "ag_system_8a3758167e69..."
-
-### Request Body (JSON)
-
+### Request Structure
 ```json
 {
+  "publish_type": "article" | "video" | "voice" | "image",
+  "title": "Title String",
+  ... (type-specific fields)
+}
+```
+
+---
+
+### A. Publish Article (Draft)
+Creates a new draft in WeChat Official Account. Supports Markdown content with Tables, Lists, and Images.
+
+**Payload**:
+```json
+{
+  "publish_type": "article",
   "title": "Future of AI Agents",
   "author": "Animagent Team",
-  "digest": "An in-depth look at how AI agents are transforming workflows.",
+  "digest": "Summary of the article.",
   "cover_image_index": 1,
-  "content_source_url": "https://animagent.ai/blog/future-of-ai",
-  "preview_email": "preangelleo@gmail.com",
-  "auto_publish": false,
+  "content_source_url": "https://animagent.ai/blog",
+  "preview_email": "user@example.com",
+  "use_llm_parser": true,
   "images_list": [
     {
       "image_index": 1,
+      "image_description": "Cover Image",
       "image_type": "url",
-      "image_url": "https://animagent.ai/assets/cover.jpg",
-      "image_alt": "Article Cover"
-    },
-    {
-      "image_index": 2,
-      "image_type": "base64",
-      "image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...", 
-      "image_alt": "Architecture Diagram"
-    },
-    {
-      "image_index": 3,
-      "image_type": "url",
-      "image_url": "https://animagent.ai/assets/chart.png",
-      "image_alt": "Performance Chart"
+      "image_url": "https://example.com/cover.jpg"
     }
   ],
-  "article_markdown": "# Future of AI Agents\n\nAI agents are evolving rapidly.\n\n## Architecture\n\nHere is how they work:\n\n![architecture](image_2)\n\n## Performance\n\n![chart](image_3)\n\nRead more at our official blog."
+  "article_markdown": "# Title\n\nContent with **Markdown**.\n\n![alt](image_1)"
 }
 ```
+> **Note**: `use_llm_parser: true` is recommended for best table/list rendering.
 
-### Parameters Guide
-- **`title`**: Article Title (Required).
-- **`author`**: Author Name (Optional).
-- **`digest`**: Short summary shown in the chat list (Optional).
-- **`cover_image_index`**: Which image from `images_list` to use as the cover (Default: 1).
-- **`content_source_url`**: "Read More" link at the bottom of the article (Optional).
-- **`preview_email`**: Email address to receive the draft preview link and "Publish Now" button (Recommended).
-- **`auto_publish`**: If `true`, publishes immediately without preview (Caution).
-- **`images_list`**: List of images used in the article.
-    - `image_index`: ID referenced in Markdown as `![alt](image_X)`.
-    - `image_type`: `url` or `base64`.
-    - `image_url` / `image_base64`: The source content.
-- **`article_markdown`**: The article content in Markdown format. Use `image_index` to embed images.
+---
 
-### Response
+### B. Upload Video (Permanent)
+Uploads a video file to WeChat Permanent Material storage.
+**Limit**: MAX 20MB.
 
-**Success (200 OK)**
+**Payload**:
 ```json
 {
-  "errcode": 0,
-  "errmsg": "ok",
-  "media_id": "MEDIA_ID",
-  "url": "URL_TO_PREVIEW_ARTICLE"
+  "publish_type": "video",
+  "title": "Video Title",
+  "introduction": "Video Description",
+  "media_source": {
+    "image_type": "base64", 
+    "image_base64": "data:video/mp4;base64,AAAA..." 
+  }
 }
 ```
+*Note: `image_type` supports "url", "base64", or "path" (internal).*
 
-**Error (400 Bad Request / 500 Internal Server Error)**
+---
+
+### C. Upload Voice (Permanent)
+Uploads an audio file (MP3/AMR) to WeChat Permanent Material storage.
+**Limit**: MAX 2MB, < 60 seconds recommended.
+
+**Payload**:
 ```json
 {
-  "error": "Error message details"
+  "publish_type": "voice",
+  "title": "Voice Title", 
+  "media_source": {
+    "image_type": "url",
+    "image_url": "https://example.com/audio.mp3"
+  }
 }
 ```
 
+---
+
+### D. Upload Image (Permanent)
+Uploads an image to WeChat Permanent Material storage (e.g., for creating a gallery).
+
+**Payload**:
+```json
+{
+  "publish_type": "image",
+  "media_source": {
+     "image_type": "base64",
+     "image_base64": "..."
+  }
+}
+```
+
+## 3. Integration Examples
+
+### Python (via `requests`)
+
+#### Publish Article
 ```python
+import requests
+
+url = "https://animagent.ai/api/weixin-publish/publish"
+headers = {"X-Admin-Api-Key": "YOUR_API_KEY"}
+
 payload = {
-    "title": "Future of AI Agents",
-    "author": "Animagent Team",
-    "digest": "An in-depth look at how AI agents are transforming workflows.",
-    "cover_image_index": 1,
-    "content_source_url": "https://animagent.ai/blog/future-of-ai",
-    "preview_email": "preangelleo@gmail.com",
-    "auto_publish": False,
-    "images_list": [
-        {
-            "image_index": 1,
-            "image_type": "url",
-            "image_url": "https://animagent.ai/assets/cover.jpg",
-            "image_alt": "Article Cover"
-        },
-        {
-            "image_index": 2,
-            "image_type": "base64",
-            "image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
-            "image_alt": "Architecture Diagram"
-        },
-        {
-            "image_index": 3,
-            "image_type": "url",
-            "image_url": "https://animagent.ai/assets/chart.png",
-            "image_alt": "Performance Chart"
-        }
-    ],
-    "article_markdown": "# Future of AI Agents\n\nAI agents are evolving rapidly.\n\n## Architecture\n\nHere is how they work:\n\n![architecture](image_2)\n\n## Performance\n\n![chart](image_3)\n\nRead more at our official blog."
+    "publish_type": "article",
+    "title": "Test Article",
+    "article_markdown": "# Hello\n\nChecking tables:\n\n| A | B |\n|---|---|\n| 1 | 2 |",
+    "images_list": [{"image_index": 1, "image_type": "url", "image_url": "https://placehold.co/600x400.jpg"}],
+    "cover_image_index": 1
 }
 
-headers = {
-    "X-Admin-Api-Key": api_key,
-    "Content-Type": "application/json"
-}
-
-response = requests.post(url, json=payload, headers=headers)
-print(response.json())
+resp = requests.post(url, json=payload, headers=headers)
+print(resp.json())
 ```
 
-### Internal Docker Call
-
-From another service in `animagent-network`:
-
+#### Upload Video
 ```python
-url = "http://wechat-publisher:5015/publish"
-# ... headers and payload same as above
+import base64
+
+# Read video file
+with open("video.mp4", "rb") as f:
+    b64_data = base64.b64encode(f.read()).decode('utf-8')
+
+payload = {
+    "publish_type": "video",
+    "title": "Demo Video",
+    "introduction": "A short demo.",
+    "media_source": {
+        "image_type": "base64",
+        "image_base64": b64_data
+    }
+}
+
+resp = requests.post(url, json=payload, headers=headers)
+print(resp.json()) 
+# Returns: {"status": true, "media_id": "...", "type": "video"}
 ```
 
-## 3. Configuration
+### Curl
+
+**Check Health**:
+```bash
+curl https://animagent.ai/api/weixin-publish/health
+```
+
+**Upload Image (Base64)**:
+```bash
+curl -X POST https://animagent.ai/api/weixin-publish/publish \
+-H "X-Admin-Api-Key: YOUR_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+    "publish_type": "image",
+    "media_source": {
+        "image_type": "url",
+        "image_url": "https://example.com/image.jpg"
+    }
+}'
+```
+
+## 4. Configuration
 
 - **Environment Variables** (`.env`):
   - `APPID`, `SECRET`: WeChat Credentials.
@@ -159,92 +190,35 @@ url = "http://wechat-publisher:5015/publish"
 
 - **Port**: Defaults to `5015`.
 
-## 4. Development & Deployment Guide
+## 5. Development & Deployment Guide
 
-This section is critical for future maintainers handling code updates and server maintenance.
-
-### A. Repository Locations
-- **Local (Dev Machine)**: `/Users/lgg/coding/wechat/wechat-public-account`
-- **Production Server (Animagent.ai)**: `/home/ubuntu/coding/wechat-public-account`
-
-### B. Prerequisite: Deployment Credentials
+### A. Deployment Credentials
 Ensure you have the SSH key (`animagent.pem`) to access the server.
 ```bash
 ssh -i /path/to/animagent.pem ubuntu@animagent.ai
 ```
 
-### C. Standard Update Procedure (Pushing Code Changes)
+### B. Standard Update Procedure (Pushing Code Changes)
 If you modify source code locally (e.g., `publisher.py` logic), follow these steps to deploy:
 
 1.  **Sync Code to Server**:
-    Use `rsync` to upload changed files (excluding temp files/caches).
+    Use `rsync` to upload changed files.
     ```bash
     rsync -avz -e "ssh -i /Users/lgg/coding/credentials/animagent.pem" \
         /Users/lgg/coding/wechat/wechat-public-account/ \
         ubuntu@animagent.ai:/home/ubuntu/coding/wechat-public-account/ \
         --exclude 'test*.py' \
         --exclude '__pycache__' \
-        --exclude 'access_token.json' \
         --exclude '.git'
     ```
 
 2.  **Rebuild & Restart Service (On Server)**:
-    SSH into the server and run the following commands to rebuild the Docker image and restart the container.
+    SSH into the server and run:
     ```bash
-    # SSH into server
-    ssh -i "/Users/lgg/coding/credentials/animagent.pem" ubuntu@animagent.ai
-
-    # Go to project directory
-    cd /home/ubuntu/coding/wechat-public-account
-
-    # Rebuild and Restart (Zero downtime is not guaranteed, but it's fast)
-    # --build: Forces image rebuild to pick up new code
-    # -d: Detached mode
-    docker-compose up -d --build --force-recreate
+    ssh -i "/Users/lgg/coding/credentials/animagent.pem" ubuntu@animagent.ai 'cd ~/wechat-public-account && docker compose up -d --build wechat-publisher'
     ```
 
-3.  **Clean Up (Optional but Recommended)**:
-    Remove unused images to save disk space.
+3.  **Logs**:
     ```bash
-    docker image prune -f
+    docker logs -f wechat-publisher
     ```
-
-### D. Server-Side Maintenance
-
-#### 1. Check Logs
-To see real-time logs of the service:
-```bash
-cd /home/ubuntu/coding/wechat-public-account
-docker-compose logs -f --tail=100
-```
-
-#### 2. Restarting Nginx
-If you change Nginx configs:
-```bash
-sudo systemctl reload nginx
-```
-
-#### 3. Access Token Maintenance
-The service caches the WeChat Access Token in `access_token.json` (inside the container volume/path) and Redis.
-If you need to force a token refresh, simple restart the container or wait for it to expire.
-
-### E. Environment Variables
-The `.env` file on the server is located at:
-`/home/ubuntu/coding/wechat-public-account/.env`
-
-If you add new variables locally, remember to:
-1. Update `.env` locally.
-2. `rsync` it to the server (or manually edit it on the server).
-3. Restart the container (`docker-compose up -d`).
-
----
-
-### F. Run Local Dev Server
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run FastAPI
-python main.py
-```
-Server runs at `http://0.0.0.0:5015`.

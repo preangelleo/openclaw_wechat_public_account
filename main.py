@@ -50,10 +50,13 @@ class ImageItem(BaseModel):
     media_path: Optional[str] = None # Support local path (for docker mapped volumes)
     image_alt: Optional[str] = None
 
-class PublishRequest(BaseModel):
-    article_markdown: str = Field(..., description="Markdown content.")
-    images_list: List[ImageItem] = Field(..., description="List of images.")
-    title: str = Field(..., description="Title.")
+class UnifiedPublishRequest(BaseModel):
+    # Common
+    publish_type: str = Field("article", pattern="^(article|image|video|voice)$", description="Type of content to publish.")
+    
+    # For Article
+    article_markdown: Optional[str] = Field(None, description="Markdown content (Article only).")
+    images_list: Optional[List[ImageItem]] = Field(None, description="List of images (Article only).")
     author: str = Field("Animagent", description="Author.")
     digest: str = Field("", description="Summary.")
     cover_image_index: int = Field(1, description="Cover Image Index.")
@@ -61,50 +64,54 @@ class PublishRequest(BaseModel):
     auto_publish: bool = Field(False, description="Publish immediately?")
     preview_wxname: str = Field("", description="Preview WeChat ID.")
     preview_email: str = Field("", description="Preview Email.")
-    use_llm_parser: bool = Field(False, description="Use LLM for parsing? Default False (Regex).")
+    use_llm_parser: bool = Field(True, description="Use LLM Parser? Default True for better structure.")
 
-class MediaPublishRequest(BaseModel):
-    media_type: str = Field(..., pattern="^(image|video|voice)$", description="Media Type.")
-    media_source: ImageItem = Field(..., description="Media source info (url/base64/path).")
-    title: str = Field("", description="Video Title (Required for Video).")
-    introduction: str = Field("", description="Video Intro (Required for Video).")
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "version": "2.0.0"}
+    # For Media (Image/Video/Voice)
+    title: str = Field("", description="Title (Required for Article/Video).")
+    introduction: str = Field("", description="Introduction (Required for Video).")
+    media_source: Optional[ImageItem] = Field(None, description="Media source info (For single media publish).")
 
 @app.post("/publish", dependencies=[Depends(get_api_key)])
-def publish_article_endpoint(request: PublishRequest):
+def publish_endpoint(request: UnifiedPublishRequest):
     """
-    Publishes an Article (Draft).
+    Unified Publish Endpoint.
+    Supports: article (draft), image, video, voice (permanent material).
     """
-    logger.info(f"Received Article Publish Request: {request.title}")
-    
-    # Validation logic (Cover must exist)
-    if not request.images_list:
-        raise HTTPException(status_code=400, detail="images_list cannot be empty.")
-
-    # Force Cover Index to 1 if user logic requires it, or respect input?
-    # User said "image_1 and image_10 replace issue". 
-    # Let's trust the input cover_image_index but validation is good.
+    logger.info(f"Received Publish Request: {request.publish_type}")
     
     try:
-        images_data = [img.dict() for img in request.images_list]
-        
-        result = wechat_public_article(
-            images_list=images_data,
-            article_markdown=request.article_markdown,
-            title=request.title,
-            author=request.author,
-            digest=request.digest,
-            cover_image_index=request.cover_image_index,
-            content_source_url=request.content_source_url,
-            preview_wxname=request.preview_wxname,
-            preview_email=request.preview_email,
-            auto_publish=request.auto_publish,
-            use_llm_parser=request.use_llm_parser
-        )
-        
+        if request.publish_type == "article":
+            # Validation
+            if not request.images_list:
+                raise HTTPException(status_code=400, detail="images_list cannot be empty for article.")
+            
+            images_data = [img.dict() for img in request.images_list]
+            result = wechat_public_article(
+                images_list=images_data,
+                article_markdown=request.article_markdown,
+                title=request.title,
+                author=request.author,
+                digest=request.digest,
+                cover_image_index=request.cover_image_index,
+                content_source_url=request.content_source_url,
+                preview_wxname=request.preview_wxname,
+                preview_email=request.preview_email,
+                auto_publish=request.auto_publish,
+                use_llm_parser=request.use_llm_parser
+            )
+        else:
+            # Media Publish
+            if not request.media_source:
+                raise HTTPException(status_code=400, detail="media_source is required for media publish.")
+                
+            media_data = request.media_source.dict()
+            result = wechat_media_publish(
+                media_type=request.publish_type,
+                media_data=media_data,
+                title=request.title,
+                introduction=request.introduction
+            )
+            
         if not result['status']:
             raise HTTPException(status_code=500, detail=result.get('message', 'Unknown error'))
             
@@ -112,32 +119,6 @@ def publish_article_endpoint(request: PublishRequest):
         
     except Exception as e:
         logger.error(f"Publish Endpoint Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/publish/media", dependencies=[Depends(get_api_key)])
-def publish_media_endpoint(request: MediaPublishRequest):
-    """
-    Publishes Standalone Media (Image, Video, Voice) to Permanent Material.
-    """
-    logger.info(f"Received Media Publish Request: {request.media_type}")
-    
-    try:
-        media_data = request.media_source.dict()
-        
-        result = wechat_media_publish(
-            media_type=request.media_type,
-            media_data=media_data,
-            title=request.title,
-            introduction=request.introduction
-        )
-        
-        if not result['status']:
-             raise HTTPException(status_code=500, detail=result.get('message'))
-             
-        return result
-
-    except Exception as e:
-        logger.error(f"Media Endpoint Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/approve")

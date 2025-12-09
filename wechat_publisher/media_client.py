@@ -139,6 +139,12 @@ class MediaClient:
             }
             # WeChat requires 'description' field as JSON string for video
             payload = {"description": json.dumps(description, ensure_ascii=False)}
+            
+            # Check Size Limit (20MB for Permanent Video via API)
+            # Official doc says 10MB sometimes, but observed limit is around 20MB.
+            # Error 45002 confirms size limit.
+            if len(content) > 20 * 1024 * 1024:
+                raise ValueError(f"Video file size ({len(content)/(1024*1024):.2f} MB) exceeds WeChat API limit (20MB). Please compress the video.")
 
         try:
             resp = requests.post(url, files=files, data=payload, timeout=300) # Longer timeout for video
@@ -150,13 +156,28 @@ class MediaClient:
                  return media_id
             
             # Error Handling: Check for validation errors
-            if data.get("errcode") in [45001, 88000]: # Capacity full
+            errcode = data.get("errcode")
+            if errcode == 40001:
+                # Token Expired
+                logger.warning(f"AccessToken Expired (40001). Refreshing...")
+                token_manager.refresh_token()
+                # Retry once
+                token = token_manager.get_token()
+                url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type={material_type}"
+                resp = requests.post(url, files={'media': (filename, content, mime)}, data=payload, timeout=300)
+                data = resp.json()
+                if "media_id" in data:
+                     self.redis_client.hset(self.media_id_map_key, content_hash, data["media_id"])
+                     return data["media_id"]
+
+            if errcode in [45001, 88000]: # Capacity full
                  logger.warning(f"Upload failed (Capacity). Attempting cleanup.")
                  self.cleanup_oldest_materials(5)
                  # Retry
                  resp = requests.post(url, files={'media': (filename, content, mime)}, data=payload, timeout=300)
                  data = resp.json()
                  if "media_id" in data:
+                      self.redis_client.hset(self.media_id_map_key, content_hash, data["media_id"]) 
                       return data["media_id"]
 
             raise Exception(f"Failed to upload {material_type}: {data}")
