@@ -133,6 +133,10 @@ async def approve_publish(media_id: str, key: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5015)
