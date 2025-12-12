@@ -1,6 +1,7 @@
 import json
 import logging
-import requests
+import logging
+import httpx
 from typing import Dict, List, Any
 from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME, TEXT_MODEL_LITE
 
@@ -17,7 +18,7 @@ class LLMClient:
             "Content-Type": "application/json"
         }
 
-    def process_article_content(self, article_markdown: str) -> List[Dict[str, Any]]:
+    async def process_article_content(self, article_markdown: str) -> List[Dict[str, Any]]:
         """
         Converts Markdown content into a structured JSON suitable for WeChat rendering.
         """
@@ -74,7 +75,8 @@ class LLMClient:
         }
 
         try:
-            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=120)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=120)
             response.raise_for_status()
             result = response.json()
             
@@ -90,23 +92,31 @@ class LLMClient:
             raise
 
 
-    def get_chat_response(self, user_message: str) -> str:
+    async def get_chat_response(self, user_message: str) -> str:
         """
         Standard chat capability using OpenRouter.
         """
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant for the Animagent WeChat Account. Be concise."},
+                {"role": "system", "content": "You are a helpful assistant for the Animagent WeChat Account. Please keep your reply concise and under 500 characters."},
                 {"role": "user", "content": user_message}
             ]
         }
         
         try:
-            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=10)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=10)
             response.raise_for_status()
             result = response.json()
-            return result['choices'][0]['message']['content']
+            content = result['choices'][0]['message']['content']
+            
+            # Enforce WeChat Passive Reply Limit (~600 chars)
+            if len(content) > 600:
+                logger.warning(f"Response too long ({len(content)}), truncating to 600.")
+                content = content[:597] + "..."
+                
+            return content
         except Exception as e:
             logger.error(f"Chat Generaton Failed: {e}")
             return "对不起，我现在有点繁忙，请稍后再试。"

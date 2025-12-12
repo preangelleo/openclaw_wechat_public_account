@@ -115,7 +115,22 @@ Uploads an image to WeChat Permanent Material storage (e.g., for creating a gall
 ```
 
 
-## 3. Interactive Bot (Chat)
+
+## 3. Article Sync & Database features
+
+This service validates and syncs published articles to a local PostgreSQL database for quick retrieval and features like "Article Card Reply".
+
+### Database Schema
+Two main tables are created in `animagent_backend_api` DB:
+1.  **`wechat_published_articles`**: Stores synced articles (Title, URL, Thumb, Digest).
+2.  **`wechat_user_logs`**: Logs all user interactions (MO/MT) for analytics.
+
+### Features
+-   **Sync Articles**: Fetches articles from WeChat `material/batchget_material` API and saves them locally.
+-   **Article Search**: Users can send "文章 [Keyword]" to get a matching article card.
+-   **Logging**: All chat messages and bot replies are logged.
+
+## 4. Interactive Bot (Chat)
 
 The service now includes an **Interactive Chat Bot** handling standard WeChat text messages.
 
@@ -146,6 +161,13 @@ The service now includes an **Interactive Chat Bot** handling standard WeChat te
 - `TEXT_MODEL`: Default model (e.g., `google/gemini-2.5-flash`)
 - `TEXT_MODEL_LITE`: Fast model for chat (e.g., `google/gemini-2.5-flash-lite`)
 - `TEXT_MODEL_PRO`: Powerful model (e.g., `google/gemini-3-pro-preview`)
+
+#### Database (PostgreSQL)
+- `POSTGRES_HOST`: DB Host (default: `animagent-postgres` in docker, `localhost` for local script)
+- `POSTGRES_PORT`: DB Port (default: `5432` / `5010`)
+- `POSTGRES_DB`: Database Name
+- `POSTGRES_USER`: Database User
+- `POSTGRES_PASSWORD`: Database Password
 
 #### Service Config
 - `ADMIN_API_KEY`: Key for securing the Publish API.

@@ -72,7 +72,7 @@ class UnifiedPublishRequest(BaseModel):
     media_source: Optional[ImageItem] = Field(None, description="Media source info (For single media publish).")
 
 @app.post("/publish", dependencies=[Depends(get_api_key)])
-def publish_endpoint(request: UnifiedPublishRequest):
+async def publish_endpoint(request: UnifiedPublishRequest):
     """
     Unified Publish Endpoint.
     Supports: article (draft), image, video, voice (permanent material).
@@ -86,7 +86,7 @@ def publish_endpoint(request: UnifiedPublishRequest):
                 raise HTTPException(status_code=400, detail="images_list cannot be empty for article.")
             
             images_data = [img.dict() for img in request.images_list]
-            result = wechat_public_article(
+            result = await wechat_public_article(
                 images_list=images_data,
                 article_markdown=request.article_markdown,
                 title=request.title,

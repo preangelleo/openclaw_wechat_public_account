@@ -6,6 +6,9 @@ from wechatpy.crypto import WeChatCrypto
 import logging
 from .config import WECHAT_TOKEN, WECHAT_AES_KEY, WECHAT_APPID
 from .bot_handler import process_user_message_background
+from .sync_service import sync_service
+from .msg_logger import log_message
+from wechatpy.replies import TextReply, ArticlesReply
 
 logger = logging.getLogger("wechat_bot")
 router = APIRouter()
@@ -59,16 +62,55 @@ async def wechat_message_handler(
 
         # 4. Handle Text Messages
         if msg.type == 'text':
+            content = msg.content.strip()
+            # LOGGING (MO)
+            log_message(msg.source, content, msg_type='text', direction='MO')
+            
+            # --- FEATURE: Article Search & Card Reply ---
+            # Trigger: "文章 Keyword" or "search Keyword"
+            if content.startswith("文章") or content.lower().startswith("search"):
+                keyword = content.replace("文章", "").replace("search", "").strip()
+                if keyword:
+                    article = sync_service.search_article(keyword)
+                    if article:
+                        # Construct Article Card (NewsReply)
+                        # WechaPy ArticlesReply takes a list of dicts/Article objects
+                        # params: title, description, image, url
+                        reply = ArticlesReply(message=msg)
+                        reply.add_article({
+                            'title': article['title'],
+                            'description': article['description'],
+                            'image': article['picurl'],
+                            'url': article['url']
+                        })
+                        
+                        # LOGGING (MT - Card)
+                        log_message(msg.source, f"Card: {article['title']}", msg_type='news', direction='MT')
+                        
+                        xml = reply.render()
+                        if msg_signature:
+                             encrypted_xml = crypto.encrypt_message(xml, nonce, timestamp)
+                             return Response(content=encrypted_xml, media_type="application/xml")
+                        else:
+                             return Response(content=xml, media_type="application/xml")
+            # ---------------------------------------------
+
             # SYNCHRONOUS MODE (Required for Unverified Accounts)
             # We must return XML within 5 seconds.
             # Using OpenRouter Gemini Flash should be fast enough.
             from .llm_client import llm_client
             
             # 1. Get AI Response
-            ai_reply = llm_client.get_chat_response(msg.content)
+            ai_reply = await llm_client.get_chat_response(msg.content)
             
             # 2. Construct XML Reply
-            from wechatpy.replies import TextReply
+            # TextReply is already imported but let's use the one we imported at top if possible, 
+            # OR keep local import if preferred. Local import at line 71 was: from wechatpy.replies import TextReply
+            # We added TextReply to top imports, so we can use it.
+            
+            # LOGGING (MT - Text)
+            log_message(msg.source, ai_reply, msg_type='text', direction='MT')
+            
             reply = TextReply(content=ai_reply, message=msg)
             xml = reply.render()
             

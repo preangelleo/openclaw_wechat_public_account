@@ -6,6 +6,8 @@ services:
       - "5015:5015"
     environment:
       - REDIS_URL=redis://animagent-redis:6379
+      - POSTGRES_HOST=animagent-postgres
+      - POSTGRES_PORT=5432
     env_file:
       - .env
     restart: unless-stopped

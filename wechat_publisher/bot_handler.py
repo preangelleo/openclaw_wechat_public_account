@@ -7,7 +7,7 @@ from wechatpy.replies import TextReply
 from wechatpy.crypto import WeChatCrypto
 from wechat_publisher.config import WECHAT_TOKEN, WECHAT_AES_KEY, WECHAT_APPID
 from wechat_publisher.llm_client import llm_client
-import requests
+import httpx
 from wechat_publisher.token_manager import token_manager
 import asyncio
 
@@ -68,20 +68,20 @@ async def process_user_message_background(openid: str, content: str):
     
     try:
         # 1. Get LLM Response
-        ai_response = llm_client.get_chat_response(content)
+        ai_response = await llm_client.get_chat_response(content)
         
         # 2. Send Custom Message
-        send_custom_message(openid, ai_response)
+        await send_custom_message(openid, ai_response)
         
     except Exception as e:
         logger.error(f"Background Process Error: {e}")
         # Optionally send error message to user
         try:
-            send_custom_message(openid, "抱歉，由于系统繁忙，暂时无法回复。请稍后再试。")
+            await send_custom_message(openid, "抱歉，由于系统繁忙，暂时无法回复。请稍后再试。")
         except:
             pass
 
-def send_custom_message(openid: str, content: str):
+async def send_custom_message(openid: str, content: str):
     """
     Sends a message to the user using the Customer Service API.
     POST https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=ACCESS_TOKEN
@@ -102,7 +102,8 @@ def send_custom_message(openid: str, content: str):
     }
     
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, timeout=10)
         resp_json = response.json()
         if resp_json.get("errcode") != 0:
             logger.error(f"WeChat Custom Message API Error: {resp_json}")

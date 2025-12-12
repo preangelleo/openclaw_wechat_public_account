@@ -8,3 +8,6 @@ pydantic
 wechatpy
 cryptography
 
+cryptography
+psycopg2-binary
+httpx

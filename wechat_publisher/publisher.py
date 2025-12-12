@@ -10,7 +10,7 @@ from .gmail_functions import send_preview_email
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def wechat_public_article(
+async def wechat_public_article(
     images_list: List[Dict[str, Any]],
     article_markdown: str,
     title: str = "New Article",
@@ -67,7 +67,7 @@ def wechat_public_article(
         # 2. Content Structure (Regex vs LLM)
         logger.info(f"Step 2: Structuring Content (LLM Mode: {use_llm_parser})...")
         if use_llm_parser:
-             structured_content = llm_client.process_article_content(article_markdown)
+             structured_content = await llm_client.process_article_content(article_markdown)
         else:
              # Use robust regex parser
              structured_content = markdown_parser.parse_content(article_markdown)

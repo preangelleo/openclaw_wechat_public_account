@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY wechat_publisher/ ./wechat_publisher/
+COPY scripts/ ./scripts/
 COPY main.py .
 
 CMD ["python", "main.py"]
