@@ -52,6 +52,7 @@ class ArticleSyncService:
         
         try:
             resp = requests.post(url, json=payload, timeout=30)
+            resp.encoding = 'utf-8' # Force usage of UTF-8 for WeChat API
             data = resp.json()
             
             if "errcode" in data and data["errcode"] != 0:
@@ -115,66 +116,136 @@ class ArticleSyncService:
         conn.commit()
         cursor.close()
 
-    def sync_recent_articles(self, limit: int = 20):
-        logger.info(f"Syncing up to {limit} recent articles...")
+    def sync_recent_articles(self, limit: int = 10):
+        logger.info(f"Starting Article Sync (Limit={limit})...")
         conn = get_db_connection()
         if not conn:
             return 0
             
-        # We fetch in batches of 20
-        count_synced = 0
-        offset = 0
-        batch_size = 20
+        new_items_count = 0
+        current_offset = 0
         
-        while count_synced < limit:
-            items = self.get_published_articles(offset, batch_size)
-            if not items:
-                break
+        try:
+            while current_offset < limit:
+                # Calculate batch size (WeChat max 20)
+                batch_size = min(20, limit - current_offset)
                 
-            for item in items:
-                self.save_article_to_db(conn, item)
+                logger.info(f"Fetching batch [Offset: {current_offset}, Count: {batch_size}]...")
+                items = self.get_published_articles(offset=current_offset, count=batch_size)
                 
-            count_synced += len(items)
-            offset += len(items)
-            
-            if len(items) < batch_size: # End of list
-                break
+                if not items:
+                    logger.info("No more items returned from WeChat.")
+                    break
                 
-        conn.close()
-        logger.info(f"Synced {count_synced} items (groups).")
-        return count_synced
+                # Check for empty list if API returns success but empty 'item'
+                if len(items) == 0:
+                    break
 
-    def search_article(self, keyword: str) -> Optional[Dict]:
+                # Process this batch
+                for item in items:
+                    media_id = item.get("media_id")
+                    content = item.get("content", {})
+                    news_items = content.get("news_item", [])
+                    update_time = item.get("update_time")
+                    
+                    for idx, news in enumerate(news_items):
+                        article_unique_id = f"{media_id}_{idx}"
+                        
+                        # Check DB
+                        try:
+                            check_cursor = conn.cursor()
+                            check_cursor.execute("SELECT 1 FROM wechat_published_articles WHERE article_id = %s", (article_unique_id,))
+                            exists = check_cursor.fetchone()
+                            check_cursor.close()
+                            
+                            if exists:
+                                continue # Skip existing
+                                
+                            # Insert New
+                            logger.info(f"Found NEW Article: {news.get('title')}")
+                            
+                            insert_sql = """
+                            INSERT INTO wechat_published_articles 
+                            (article_id, title, digest, content_url, thumb_url, author, update_time)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """
+                            insert_cursor = conn.cursor()
+                            insert_cursor.execute(insert_sql, (
+                                article_unique_id, 
+                                news.get("title"), 
+                                news.get("digest"), 
+                                news.get("url"), 
+                                news.get("thumb_url"), 
+                                news.get("author"), 
+                                update_time
+                            ))
+                            conn.commit() # Commit each insert to be safe
+                            insert_cursor.close()
+                            new_items_count += 1
+                            
+                        except Exception as inner_e:
+                            logger.error(f"Error processing article: {inner_e}")
+                            conn.rollback()
+
+                # Increment offset for next loop
+                current_offset += len(items)
+                
+                # Safety break to avoid infinite loops if something is weird
+                if len(items) < batch_size:
+                    # If we got fewer than requested, we are at the end
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Sync process interrupted: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+        logger.info(f"Sync Complete. Added {new_items_count} new articles.")
+        return new_items_count
+
+    def search_articles(self, keyword: str) -> List[Dict]:
         """
-        Search for an article in local DB by title match.
-        Returns dictionary with title, digest, url, thumb_url.
+        Search articles by keyword (Title or Digest).
+        Returns list of top 5 matches.
         """
         conn = get_db_connection()
         if not conn:
-            return None
+            return []
             
-        cursor = conn.cursor()
-        # Simple suffix/prefix match
-        sql = "SELECT title, digest, content_url, thumb_url FROM wechat_published_articles WHERE title ILIKE %s ORDER BY update_time DESC LIMIT 1;"
-        import urllib.parse
-        
+        search_pattern = f"%{keyword}%"
         try:
-            cursor.execute(sql, (f"%{keyword}%",))
-            row = cursor.fetchone()
-            if row:
-                return {
+            cursor = conn.cursor()
+            # Search Title OR Digest
+            sql = """
+            SELECT title, digest, content_url, thumb_url, update_time 
+            FROM wechat_published_articles 
+            WHERE title ILIKE %s OR digest ILIKE %s
+            ORDER BY update_time DESC 
+            LIMIT 5
+            """
+            cursor.execute(sql, (search_pattern, search_pattern))
+            rows = cursor.fetchall()
+            cursor.close()
+            
+            results = []
+            for row in rows:
+                results.append({
                     "title": row[0],
-                    "description": row[1] or "No description",
+                    "description": row[1] or "", # Digest can be null
                     "url": row[2],
-                    "picurl": row[3] or "" # Fallback image?
-                }
+                    "picurl": row[3]
+                })
+            return results
+            
         except Exception as e:
             logger.error(f"Search failed: {e}")
+            return []
         finally:
-            cursor.close()
-            conn.close()
+            if conn:
+                conn.close()
             
-        return None
+        return []
 
 # Global Instance
 sync_service = ArticleSyncService()

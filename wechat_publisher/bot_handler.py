@@ -81,10 +81,12 @@ async def process_user_message_background(openid: str, content: str):
         except:
             pass
 
-async def send_custom_message(openid: str, content: str):
+async def send_custom_message(openid: str, content: str, msg_type: str = "text", extra_data: dict = None):
     """
     Sends a message to the user using the Customer Service API.
     POST https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=ACCESS_TOKEN
+    
+    msg_type: text | news
     """
     access_token = token_manager.get_token()
     if not access_token:
@@ -95,11 +97,22 @@ async def send_custom_message(openid: str, content: str):
     
     payload = {
         "touser": openid,
-        "msgtype": "text",
-        "text": {
-            "content": content
-        }
+        "msgtype": msg_type
     }
+    
+    if msg_type == "text":
+        payload["text"] = {"content": content}
+    elif msg_type == "news":
+        # extra_data should be a dict representing a SINGLE article item
+        # e.g. {"title": "T", "description": "D", "url": "U", "picurl": "P"}
+        # WeChat Custom Message 'news' supports list of articles
+        if not extra_data:
+             logger.error("News message requires extra_data")
+             return
+             
+        payload["news"] = {
+            "articles": [extra_data]
+        }
     
     try:
         async with httpx.AsyncClient() as client:
@@ -108,6 +121,6 @@ async def send_custom_message(openid: str, content: str):
         if resp_json.get("errcode") != 0:
             logger.error(f"WeChat Custom Message API Error: {resp_json}")
         else:
-            logger.info(f"Sent reply to {openid}")
+            logger.info(f"Sent {msg_type} reply to {openid}")
     except Exception as e:
         logger.error(f"Failed to send custom message: {e}")

@@ -138,11 +138,36 @@ def health_check():
     return {"status": "ok"}
 
 
+
 # Import Router
 from wechat_publisher.router import router as wechat_bot_router
 
 # Nginx strips the /api/weixin-publish prefix, so we expose /wechat/callback at root level relative to the app
 app.include_router(wechat_bot_router, tags=["WeChat Bot"])
+
+# Scheduler Configuration (Hourly Sync)
+from apscheduler.schedulers.background import BackgroundScheduler
+from wechat_publisher.sync_service import sync_service
+
+scheduler = BackgroundScheduler()
+
+@app.on_event("startup")
+def start_scheduler():
+    # Run sync every 1 hour
+    # We use 'interval' trigger. 
+    # Also run once on startup? Usually good to check immediately, 
+    # but to avoid slowing down startup, we let scheduler handle it.
+    # User requested: "每個小時讀取一次".
+    
+    # We add the job.
+    scheduler.add_job(sync_service.sync_recent_articles, 'interval', hours=1, kwargs={"limit": 10}, id="wechat_article_sync")
+    scheduler.start()
+    logger.info("Scheduler started. Hourly article sync active.")
+
+@app.on_event("shutdown")
+def stop_scheduler():
+    scheduler.shutdown()
+    logger.info("Scheduler shut down.")
 
 if __name__ == "__main__":
     import uvicorn

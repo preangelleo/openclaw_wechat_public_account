@@ -3,10 +3,8 @@ import logging
 import os
 import time
 import psycopg2
+import sys
 from typing import Optional
-# Reuse connection logic or import? Better to keep it clean.
-# We will duplicate simple connection logic or move to a common db helper if this grows.
-# For now, let's just use the same env var logic.
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +25,9 @@ def get_db_connection():
         )
         return conn
     except Exception as e:
-        logger.error(f"DB Connection failed: {e}")
+        err_msg = f"DB Connection failed: {e}"
+        logger.error(err_msg)
+        print(f"CRITICAL: {err_msg}", file=sys.stderr) # Force Output
         return None
 
 def log_message(openid: str, content: str, msg_type: str = "text", direction: str = "MO"):
@@ -35,8 +35,10 @@ def log_message(openid: str, content: str, msg_type: str = "text", direction: st
     Logs a message to DB.
     direction: 'MO' (User Sent) or 'MT' (Reply/Bot Sent)
     """
+    print(f"Attempting to log message: {direction} from {openid}", file=sys.stdout) # Debug
     conn = get_db_connection()
     if not conn:
+        print("Log skipped: No DB Connection", file=sys.stderr)
         return
         
     try:
@@ -50,11 +52,12 @@ def log_message(openid: str, content: str, msg_type: str = "text", direction: st
         cursor.execute(sql, (openid, msg_type, content, direction, create_time))
         conn.commit()
         cursor.close()
-        # logger.info(f"Logged {direction} message for {openid}")
+        logger.info(f"Logged {direction} message for {openid}")
+        print(f"SUCCESS: Logged {direction} message for {openid}", file=sys.stdout)
     except Exception as e:
-        logger.error(f"Failed to log message for {openid}: {e}")
+        err_msg = f"Failed to log message for {openid}: {e}"
+        logger.error(err_msg)
+        print(f"ERROR: {err_msg}", file=sys.stderr)
     finally:
         if conn:
             conn.close()
-
-# Decorator? Or just direct call. Direct call is simpler.

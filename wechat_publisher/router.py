@@ -10,6 +10,9 @@ from .sync_service import sync_service
 from .msg_logger import log_message
 from wechatpy.replies import TextReply, ArticlesReply
 
+from .memory_manager import memory_manager
+from .llm_client import llm_client
+
 logger = logging.getLogger("wechat_bot")
 router = APIRouter()
 
@@ -66,60 +69,106 @@ async def wechat_message_handler(
             # LOGGING (MO)
             log_message(msg.source, content, msg_type='text', direction='MO')
             
+            
             # --- FEATURE: Article Search & Card Reply ---
-            # Trigger: "文章 Keyword" or "search Keyword"
-            if content.startswith("文章") or content.lower().startswith("search"):
-                keyword = content.replace("文章", "").replace("search", "").strip()
+            # --- UNIFIED NLU FLOW ---
+            
+            # 1. Retrieve Context
+            openid = msg.source
+            history = memory_manager.get_context(openid)
+            
+            # 2. Get AI Decision & Response (JSON)
+            nlu_result = await llm_client.get_chat_response(msg.content, history=history)
+            
+            # 3. Update Memory (User)
+            memory_manager.update_context(openid, msg.content, 'user')
+            
+            # 4. Process Decision
+            reply_xml = None
+            
+            if nlu_result.get("needs_search"):
+                keyword = nlu_result.get("search_keywords")
+                logger.info(f"NLU Decision: SEARCH '{keyword}'")
+                
                 if keyword:
-                    article = sync_service.search_article(keyword)
-                    if article:
-                        # Construct Article Card (NewsReply)
-                        # WechaPy ArticlesReply takes a list of dicts/Article objects
-                        # params: title, description, image, url
-                        reply = ArticlesReply(message=msg)
-                        reply.add_article({
-                            'title': article['title'],
-                            'description': article['description'],
-                            'image': article['picurl'],
-                            'url': article['url']
-                        })
+                    # --- AUTO SYNC (User Request) ---
+                    # Ensure DB is fresh with latest 5 articles before searching
+                    try:
+                        sync_service.sync_recent_articles(limit=5)
+                    except Exception as e:
+                        logger.error(f"Auto-sync failed: {e}")
                         
-                        # LOGGING (MT - Card)
-                        log_message(msg.source, f"Card: {article['title']}", msg_type='news', direction='MT')
-                        
-                        xml = reply.render()
-                        if msg_signature:
-                             encrypted_xml = crypto.encrypt_message(xml, nonce, timestamp)
-                             return Response(content=encrypted_xml, media_type="application/xml")
+                    articles = sync_service.search_articles(keyword)
+                    if articles:
+                        # --- CASE A: Search Success ---
+                        if len(articles) > 1:
+                            # Multiple results: Use Text List (WeChat Limit Bypass)
+                            logger.info(f"Found {len(articles)} articles. Using Text List to bypass 1-card limit.")
+                            content_lines = [f"🔍 找到 {len(articles)} 篇关于 '{keyword}' 的文章："]
+                            for i, art in enumerate(articles):
+                                content_lines.append(f"\n{i+1}. <a href='{art['url']}'>{art['title']}</a>")
+                            
+                            reply_text = "".join(content_lines)
+                            reply = TextReply(message=msg, content=reply_text)
+                            
+                            log_message(msg.source, reply_text, msg_type='text', direction='MT')
+                            memory_manager.update_context(openid, reply_text, 'model')
+                            reply_xml = reply.render()
                         else:
-                             return Response(content=xml, media_type="application/xml")
-            # ---------------------------------------------
+                            # Single result: Use Card (Visual is better)
+                            logger.info("Found 1 article. Using Card Reply.")
+                            reply = ArticlesReply(message=msg)
+                            for art in articles:
+                                # 1. Force HTTPS for images (WeChat requirement)
+                                picurl = art['picurl']
+                                if picurl and picurl.startswith("http://"):
+                                    picurl = picurl.replace("http://", "https://")
+                                    
+                                reply.add_article({
+                                    'title': art['title'],
+                                    'description': art['description'],
+                                    'image': picurl,
+                                    'url': art['url']
+                                })
+                            
+                            log_message(msg.source, "[Article Card Reply]", msg_type='news', direction='MT')
+                            memory_manager.update_context(openid, f"[分享了文章: {articles[0]['title']}]", 'model')
+                            reply_xml = reply.render()
+                    else:
+                        # --- CASE B: Search Empty -> TEXT FALLBACK ---
+                        logger.info(f"Search empty for '{keyword}', falling back to text.")
+                        # Force override LLM text because it might be "Searching..." or "Here is..." which is wrong if empty.
+                        text_content = f"抱歉，未找到关于 '{keyword}' 的文章。"
+                        
+                        log_message(msg.source, text_content, msg_type='text', direction='MT')
+                        memory_manager.update_context(openid, text_content, 'model')
+                        
+                        reply = TextReply(content=text_content, message=msg)
+                        reply_xml = reply.render()
+                else:
+                    # Keyword somehow null
+                    text_content = nlu_result.get("reply_content", "我无法理解您想搜索什么。")
+                    log_message(msg.source, text_content, msg_type='text', direction='MT')
+                    memory_manager.update_context(openid, text_content, 'model')
+                    reply = TextReply(content=text_content, message=msg)
+                    reply_xml = reply.render()
+            else:
+                 # --- CASE C: General Chat -> TEXT REPLY ---
+                 logger.info(f"NLU Decision: CHAT")
+                 text_content = nlu_result.get("reply_content", "收到。")
+                 
+                 log_message(msg.source, text_content, msg_type='text', direction='MT')
+                 memory_manager.update_context(openid, text_content, 'model')
+                 
+                 reply = TextReply(content=text_content, message=msg)
+                 reply_xml = reply.render()
 
-            # SYNCHRONOUS MODE (Required for Unverified Accounts)
-            # We must return XML within 5 seconds.
-            # Using OpenRouter Gemini Flash should be fast enough.
-            from .llm_client import llm_client
-            
-            # 1. Get AI Response
-            ai_reply = await llm_client.get_chat_response(msg.content)
-            
-            # 2. Construct XML Reply
-            # TextReply is already imported but let's use the one we imported at top if possible, 
-            # OR keep local import if preferred. Local import at line 71 was: from wechatpy.replies import TextReply
-            # We added TextReply to top imports, so we can use it.
-            
-            # LOGGING (MT - Text)
-            log_message(msg.source, ai_reply, msg_type='text', direction='MT')
-            
-            reply = TextReply(content=ai_reply, message=msg)
-            xml = reply.render()
-            
+            # 5. Encrypt & Return
             if msg_signature:
-                # Safe Mode: Encrypt the reply
-                encrypted_xml = crypto.encrypt_message(xml, nonce, timestamp)
+                encrypted_xml = crypto.encrypt_message(reply_xml, nonce, timestamp)
                 return Response(content=encrypted_xml, media_type="application/xml")
             else:
-                return Response(content=xml, media_type="application/xml")
+                return Response(content=reply_xml, media_type="application/xml")
             
         # 5. Handle Subscribe Events (Optional)
         elif msg.type == 'event' and msg.event == 'subscribe':

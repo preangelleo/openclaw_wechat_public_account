@@ -92,33 +92,100 @@ class LLMClient:
             raise
 
 
-    async def get_chat_response(self, user_message: str) -> str:
+    async def get_chat_response(self, user_message: str, history: List[Dict] = None) -> Dict[str, Any]:
         """
-        Standard chat capability using OpenRouter.
+        NLU Chat with Structured Output.
+        Returns Dict with keys: needs_search (bool), search_keywords (str|None), reply_content (str).
         """
+        # 1. JSON Schema for NLU
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "needs_search": {
+                    "type": "boolean",
+                    "description": "True if the user is asking for articles, requesting information that requires a database search, or explicitly asking to 'find/search' something. False for general chat, greetings, or questions about the bot itself."
+                },
+                "search_keywords": {
+                    "type": ["string", "null"],
+                    "description": "The specific keywords to search for in the database. Extract the core topic (e.g., 'blockchain' from 'articles about blockchain'). Set to null if needs_search is False."
+                },
+                "reply_content": {
+                    "type": "string",
+                    "description": "The concise text reply to the user. If needs_search is True, this message will be shown ONLY if no articles are found. If needs_search is False, this is the main response. Keep it under 500 characters."
+                }
+            },
+            "required": ["needs_search", "search_keywords", "reply_content"],
+            "additionalProperties": False
+        }
+
+        # 2. Convert History (Gemini Format -> OpenAI Format)
+        # History in MemoryManager: {'role': 'model'/'user', 'parts': ['text']}
+        # OpenRouter expects: {'role': 'assistant'/'user', 'content': 'text'}
+        messages = []
+        
+        # System Prompt
+        system_prompt = """
+        You are 'Animagent Assistant' for Wang Lijie (Leo)'s WeChat Account.
+        Your goal is to helpful, concise, and smart.
+        
+        DECISION LOGIC:
+        - Analyze the user's input to determine if they want to READ/FIND articles.
+        - If YES: Set 'needs_search' = True and extract the most relevant short keyword.
+        - If NO (e.g., 'Hello', 'Who are you', 'Tell me a joke'): Set 'needs_search' = False.
+        
+        Examples:
+        - "Tell me about blockchain" -> needs_search: True, keywords: "blockchain"
+        - "Do you have articles on investment?" -> needs_search: True, keywords: "investment"
+        - "Hi Leo" -> needs_search: False
+        
+        OUTPUT RULES:
+        - Return pure JSON matching the schema.
+        - 'reply_content' must be plain text, no markdown headers/bolding, < 500 chars.
+        """
+        messages.append({"role": "system", "content": system_prompt})
+        
+        if history:
+            for msg in history:
+                role = "assistant" if msg.get("role") == "model" else "user"
+                # Handle parts list safely
+                parts = msg.get("parts", [])
+                content = parts[0] if parts else ""
+                messages.append({"role": role, "content": content})
+
+        # Current User Message
+        messages.append({"role": "user", "content": user_message})
+
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant for the Animagent WeChat Account. Please keep your reply concise and under 500 characters."},
-                {"role": "user", "content": user_message}
-            ]
+            "messages": messages,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "nlu_search_decision",
+                    "strict": True,
+                    "schema": json_schema
+                }
+            }
         }
         
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=10)
+                response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=15)
             response.raise_for_status()
             result = response.json()
-            content = result['choices'][0]['message']['content']
+            content_str = result['choices'][0]['message']['content']
             
-            # Enforce WeChat Passive Reply Limit (~600 chars)
-            if len(content) > 600:
-                logger.warning(f"Response too long ({len(content)}), truncating to 600.")
-                content = content[:597] + "..."
-                
-            return content
+            # Parse JSON
+            parsed_result = json.loads(content_str)
+            return parsed_result
+            
         except Exception as e:
-            logger.error(f"Chat Generaton Failed: {e}")
-            return "对不起，我现在有点繁忙，请稍后再试。"
+            logger.error(f"Chat NLU Failed: {e}")
+            # Fallback safe response
+            return {
+                "needs_search": False,
+                "search_keywords": None,
+                "reply_content": "对不起，我现在有点繁忙，请稍后再试。"
+            }
 
 llm_client = LLMClient()
