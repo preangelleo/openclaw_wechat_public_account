@@ -106,9 +106,13 @@ async def wechat_public_article(
                 base_host = "https://animagent.ai"
                 approval_key = "secret_approval_key"
                 publish_endpoint = f"{base_host}/api/weixin-publish/approve?media_id={draft_media_id}&key={approval_key}"
-                send_preview_email(preview_email, draft_link, publish_endpoint, title)
+                try:
+                    send_preview_email(preview_email, draft_link, publish_endpoint, title)
+                    logger.info(f"Checking email sending logic triggered for known recipient {preview_email}")
+                except Exception as e:
+                    logger.error(f"Error calling send_preview_email: {e}")
             else:
-                logger.warning("Could not get Draft URL, skipping email.")
+                logger.warning("Could not get Draft URL after retries, skipping email.")
 
         # 5. Publish
         if auto_publish:

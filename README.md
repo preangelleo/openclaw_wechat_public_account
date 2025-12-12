@@ -178,7 +178,11 @@ The service now includes an **Interactive Chat Bot** handling standard WeChat te
 ## 5. Development & Deployment Guide
 
 ### A. One-Click Deployment (Recommended)
-We provide a script `deployment.sh` that handles sync, build, and restart.
+**Target Server**: `animagent.ai` (Production)
+We provide a script `deployment.sh` that handles syncing code, updating config, building, and restarting the service on the remote server.
+
+**Creating a new deployment**:
+Always use this script to deploy changes to the production server. Do not try to run manual docker commands unless debugging.
 
 ```bash
 # From local project root

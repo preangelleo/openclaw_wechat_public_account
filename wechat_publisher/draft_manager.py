@@ -1,6 +1,7 @@
 import logging
 import requests
 import json
+import time
 from .token_manager import token_manager
 from typing import List, Dict, Any
 
@@ -165,18 +166,26 @@ class DraftManager:
         # WeChat 'get' API usually takes json={"media_id": ...}
         payload = {"media_id": media_id}
         
-        try:
-            resp = requests.post(url, json=payload, timeout=30)
-            data = resp.json()
-            
-            if "news_item" in data and len(data["news_item"]) > 0:
-                return data["news_item"][0]["url"]
-            else:
-                logger.warning(f"Could not find URL for draft {media_id}. Resp: {data}")
-                return ""
-        except Exception as e:
-            logger.error(f"Error getting draft URL: {e}")
-            return ""
+        retry_count = 3
+        for attempt in range(retry_count):
+            try:
+                resp = requests.post(url, json=payload, timeout=30)
+                data = resp.json()
+                
+                if "news_item" in data and len(data["news_item"]) > 0:
+                    url = data["news_item"][0]["url"]
+                    logger.info(f"Draft URL retrieved successfully on attempt {attempt + 1}: {url}")
+                    return url
+                else:
+                    logger.warning(f"Attempt {attempt + 1}/{retry_count}: Could not find URL for draft {media_id}. Resp: {data}")
+                    if attempt < retry_count - 1:
+                        time.sleep(2)
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1}/{retry_count}: Error getting draft URL: {e}")
+                if attempt < retry_count - 1:
+                    time.sleep(2)
+        
+        return ""
 
     def send_preview(self, media_id: str, wxname: str) -> bool:
         """
