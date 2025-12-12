@@ -137,6 +137,13 @@ async def approve_publish(media_id: str, key: str):
 def health_check():
     return {"status": "ok"}
 
+
+# Import Router
+from wechat_publisher.router import router as wechat_bot_router
+
+# Nginx strips the /api/weixin-publish prefix, so we expose /wechat/callback at root level relative to the app
+app.include_router(wechat_bot_router, tags=["WeChat Bot"])
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5015)

@@ -2,12 +2,12 @@ import json
 import logging
 import requests
 from typing import Dict, List, Any
-from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME
+from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME, TEXT_MODEL_LITE
 
 logger = logging.getLogger(__name__)
 
 class LLMClient:
-    def __init__(self, model="google/gemini-2.5-flash"):
+    def __init__(self, model=TEXT_MODEL_LITE):
         self.model = model
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
         self.headers = {
@@ -88,5 +88,27 @@ class LLMClient:
             logger.error(f"LLM Processing Failed: {e}")
             # Fallback: Return a simple structure if LLM fails? Or raise.
             raise
+
+
+    def get_chat_response(self, user_message: str) -> str:
+        """
+        Standard chat capability using OpenRouter.
+        """
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant for the Animagent WeChat Account. Be concise."},
+                {"role": "user", "content": user_message}
+            ]
+        }
+        
+        try:
+            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=10)
+            response.raise_for_status()
+            result = response.json()
+            return result['choices'][0]['message']['content']
+        except Exception as e:
+            logger.error(f"Chat Generaton Failed: {e}")
+            return "对不起，我现在有点繁忙，请稍后再试。"
 
 llm_client = LLMClient()

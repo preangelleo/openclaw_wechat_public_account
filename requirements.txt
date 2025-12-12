@@ -5,3 +5,6 @@ redis
 python-dotenv
 pillow
 pydantic
+wechatpy
+cryptography
+

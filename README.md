@@ -114,108 +114,79 @@ Uploads an image to WeChat Permanent Material storage (e.g., for creating a gall
 }
 ```
 
-## 3. Integration Examples
 
-### Python (via `requests`)
+## 3. Interactive Bot (Chat)
 
-#### Publish Article
-```python
-import requests
+The service now includes an **Interactive Chat Bot** handling standard WeChat text messages.
 
-url = "https://animagent.ai/api/weixin-publish/publish"
-headers = {"X-Admin-Api-Key": "YOUR_API_KEY"}
+### Logic Flow
+1.  **Webhook**: Receives POST request from WeChat at `/wechat/callback`.
+2.  **Synchronous Reply**: to bypass "Unauthorized API (48001)" errors on unverified accounts, the bot uses **passive synchronous replies**.
+    - It must generate and return the XML response within **5 seconds**.
+    - Uses `google/gemini-2.5-flash-lite` (via OpenRouter) for speed.
 
-payload = {
-    "publish_type": "article",
-    "title": "Test Article",
-    "article_markdown": "# Hello\n\nChecking tables:\n\n| A | B |\n|---|---|\n| 1 | 2 |",
-    "images_list": [{"image_index": 1, "image_type": "url", "image_url": "https://placehold.co/600x400.jpg"}],
-    "cover_image_index": 1
-}
+### Features
+- **Auto-Reply**: Chats with users using the configured LLM.
+- **Safe Mode**: Supports WeChat's encryption/decryption (AES).
 
-resp = requests.post(url, json=payload, headers=headers)
-print(resp.json())
-```
-
-#### Upload Video
-```python
-import base64
-
-# Read video file
-with open("video.mp4", "rb") as f:
-    b64_data = base64.b64encode(f.read()).decode('utf-8')
-
-payload = {
-    "publish_type": "video",
-    "title": "Demo Video",
-    "introduction": "A short demo.",
-    "media_source": {
-        "image_type": "base64",
-        "image_base64": b64_data
-    }
-}
-
-resp = requests.post(url, json=payload, headers=headers)
-print(resp.json()) 
-# Returns: {"status": true, "media_id": "...", "type": "video"}
-```
-
-### Curl
-
-**Check Health**:
-```bash
-curl https://animagent.ai/api/weixin-publish/health
-```
-
-**Upload Image (Base64)**:
-```bash
-curl -X POST https://animagent.ai/api/weixin-publish/publish \
--H "X-Admin-Api-Key: YOUR_KEY" \
--H "Content-Type: application/json" \
--d '{
-    "publish_type": "image",
-    "media_source": {
-        "image_type": "url",
-        "image_url": "https://example.com/image.jpg"
-    }
-}'
-```
+---
 
 ## 4. Configuration
 
-- **Environment Variables** (`.env`):
-  - `APPID`, `SECRET`: WeChat Credentials.
-  - `ADMIN_API_KEY`: Key for securing this API.
-  - `OPENROUTER_API_KEY`: For LLM content structuring.
+### Environment Variables (`.env`)
 
-- **Port**: Defaults to `5015`.
+#### WeChat Credentials
+- `APPID`: WeChat App ID
+- `SECRET`: WeChat App Secret
+- `WECHAT_TOKEN`: Token for server verification
+- `WECHAT_AES_KEY`: EncodingAESKey for message encryption
+
+#### OpenRouter / LLM
+- `OPENROUTER_API_KEY`: API Key
+- `TEXT_MODEL`: Default model (e.g., `google/gemini-2.5-flash`)
+- `TEXT_MODEL_LITE`: Fast model for chat (e.g., `google/gemini-2.5-flash-lite`)
+- `TEXT_MODEL_PRO`: Powerful model (e.g., `google/gemini-3-pro-preview`)
+
+#### Service Config
+- `ADMIN_API_KEY`: Key for securing the Publish API.
+- `REDIS_URL`: (Optional) For token caching.
+
+---
 
 ## 5. Development & Deployment Guide
 
-### A. Deployment Credentials
-Ensure you have the SSH key (`animagent.pem`) to access the server.
+### A. One-Click Deployment (Recommended)
+We provide a script `deployment.sh` that handles sync, build, and restart.
+
 ```bash
-ssh -i /path/to/animagent.pem ubuntu@animagent.ai
+# From local project root
+./deployment.sh
 ```
 
-### B. Standard Update Procedure (Pushing Code Changes)
-If you modify source code locally (e.g., `publisher.py` logic), follow these steps to deploy:
+### B. Manual Deployment Credentials
+Ensure you have the SSH key (`animagent.pem`) to access the server.
+```bash
+ssh -i /Users/lgg/coding/credentials/animagent.pem ubuntu@animagent.ai
+```
+
+### C. Manual Update Procedure
+If you cannot use the script:
 
 1.  **Sync Code to Server**:
     Use `rsync` to upload changed files.
     ```bash
     rsync -avz -e "ssh -i /Users/lgg/coding/credentials/animagent.pem" \
         /Users/lgg/coding/wechat/wechat-public-account/ \
-        ubuntu@animagent.ai:/home/ubuntu/coding/wechat-public-account/ \
+        ubuntu@animagent.ai:/home/ubuntu/animagent-frontend/wechat-public-account/ \
         --exclude 'test*.py' \
         --exclude '__pycache__' \
         --exclude '.git'
     ```
 
 2.  **Rebuild & Restart Service (On Server)**:
-    SSH into the server and run:
+    SSH into the server and run (ensure you are in the correct directory matching `docker-compose.yml`):
     ```bash
-    ssh -i "/Users/lgg/coding/credentials/animagent.pem" ubuntu@animagent.ai 'cd ~/wechat-public-account && docker compose up -d --build wechat-publisher'
+    ssh -i "/Users/lgg/coding/credentials/animagent.pem" ubuntu@animagent.ai 'docker restart wechat-publisher'
     ```
 
 3.  **Logs**:
