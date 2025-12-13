@@ -52,7 +52,7 @@ class LLMClient:
         4. Parse Lists -> type: "list", content: inner HTML `<ul>/<li>` string. IMPORTANT: Do not include newlines between `<li>` tags. Output compact HTML.
         5. Parse Blockquotes -> type: "quote".
         6. Parse Tables -> type: "table", content: valid HTML `<table>` string with simple inline styles (border, padding).
-        7. Keep the content clean. Remove markdown symbols like ## or ** in the content field, apply them as structural meaning.
+        7. Keep the content clean. Remove markdown symbols like ## for headers, BUT PRESERVE bold syntax (**text**) or convert it to <b>text</b> or <strong>text</strong> so it can be rendered.
         8. For "image_{index}", set the 'index' field to the integer N.
         """
 

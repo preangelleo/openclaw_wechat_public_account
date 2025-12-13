@@ -2,6 +2,7 @@ import logging
 import requests
 import json
 import time
+import re
 from .token_manager import token_manager
 from typing import List, Dict, Any
 
@@ -45,7 +46,9 @@ class DraftManager:
                 if not content or not content.strip():
                     html_parts.append('<br/>')
                 else:
-                    html_parts.append(f'<p style="font-size: 16px; line-height: 1.6; margin-bottom: 10px; text-align: justify;">{content}</p>')
+                    # Apply inline formatting
+                    fmt_content = self._parse_inline_formatting(content)
+                    html_parts.append(f'<p style="font-size: 16px; line-height: 1.6; margin-bottom: 10px; text-align: justify;">{fmt_content}</p>')
                     
             elif item_type == "image":
                 # ... (Image Logic) ...
@@ -65,7 +68,8 @@ class DraftManager:
             elif item_type == "quote":
                 # Quote has dedicated spacing around it.
                 html_parts.append('<br/>') 
-                html_parts.append(f'<blockquote style="padding-left: 10px; border-left: 3px solid #dbdbdb; color: #666; font-size: 15px; margin: 10px 0;">{content}</blockquote>')
+                fmt_content = self._parse_inline_formatting(content)
+                html_parts.append(f'<blockquote style="padding-left: 10px; border-left: 3px solid #dbdbdb; color: #666; font-size: 15px; margin: 10px 0;">{fmt_content}</blockquote>')
                 html_parts.append('<br/>')
                 
             elif item_type == "list":
@@ -81,7 +85,15 @@ class DraftManager:
                 elif "<ul" in clean_content:
                     clean_content = clean_content.replace("<ul", '<ul style="list-style-type: disc; margin-left: 20px; padding-left: 20px;"')
                 
-                html_parts.append(f'<div style="margin: 10px 0; font-size: 16px;">{clean_content}</div>')
+                # Apply formatting to list content - wait, LIST content from LLM is ALREADY HTML <ul><li>...</li></ul>
+                # So we can't just run regex on the whole block indiscriminately if it contains tags?
+                # The regex \*\*(.+?)\*\* should be safe even if tags exist, as long as ** isn't inside attributes.
+                # But wait, LLM returns "content": "<ul><li>Item 1</li></ul>"
+                # If LLM returns "<ul><li>**Bold**</li></ul>", the regex will find **Bold** and replace it.
+                # So it IS safe to run it on clean_content.
+                
+                fmt_content = self._parse_inline_formatting(clean_content)
+                html_parts.append(f'<div style="margin: 10px 0; font-size: 16px;">{fmt_content}</div>')
 
             elif item_type == "table":
                  html_parts.append(f'<div style="margin: 20px 0; overflow-x: auto;">{content}</div>')
@@ -98,6 +110,17 @@ class DraftManager:
         
         html_parts.append('</div>')
         return "".join(html_parts)
+
+    def _parse_inline_formatting(self, text: str) -> str:
+        """
+        Parses inline markdown formatting.
+        Currently supports:
+        - **bold** -> <strong>bold</strong>
+        """
+        # Replace **text** with <strong>text</strong>
+        # Non-greedy match for content inside stars
+        # Note: We need to make sure we don't break existing HTML tags if text contains them
+        return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
 
     def create_draft(self, title: str, author: str, digest: str, content_html: str, thumb_media_id: str, content_source_url: str = "") -> str:
         """
