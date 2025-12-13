@@ -140,7 +140,7 @@ class MarkdownParser:
                 content = stripped[1:].strip()
                 blocks.append({
                     "type": "quote",
-                    "content": content
+                    "content": self._parse_inline_formatting(content)
                 })
                 continue
                 
@@ -177,7 +177,7 @@ class MarkdownParser:
             
             blocks.append({
                 "type": "paragraph",
-                "content": stripped
+                "content": self._parse_inline_formatting(stripped)
             })
             
         # Final flush
@@ -191,10 +191,21 @@ class MarkdownParser:
         Converts list items to HTML string for the 'content' field.
         """
         tag = "ul" if list_type == 'ul' else "ol"
-        html_items = "".join([f"<li>{item}</li>" for item in items])
+        # Parse inline formatting for each list item
+        html_items = "".join([f"<li>{self._parse_inline_formatting(item)}</li>" for item in items])
         return {
             "type": "list",
             "content": f"<{tag}>{html_items}</{tag}>"
         }
+
+    def _parse_inline_formatting(self, text: str) -> str:
+        """
+        Parses inline markdown formatting.
+        Currently supports:
+        - **bold** -> <strong>bold</strong>
+        """
+        # Replace **text** with <strong>text</strong>
+        # Non-greedy match for content inside stars
+        return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
 
 markdown_parser = MarkdownParser()
