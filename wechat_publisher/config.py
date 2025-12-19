@@ -21,6 +21,9 @@ OPENROUTER_HEADER_SITE_NAME = os.getenv("OPENROUTER_HEADER_SITE_NAME", "Animagen
 TEXT_MODEL = os.getenv("TEXT_MODEL", "google/gemini-2.5-flash")
 TEXT_MODEL_LITE = os.getenv("TEXT_MODEL_LITE", "google/gemini-2.5-flash-lite")
 TEXT_MODEL_PRO = os.getenv("TEXT_MODEL_PRO", "google/gemini-3-pro-preview")
+TEXT_MODEL_FLASH = "google/gemini-3-flash-preview"
+
+TEXT_MODEL_LIST = [TEXT_MODEL, TEXT_MODEL_FLASH, TEXT_MODEL_PRO]
 
 # External Services
 REDIS_URL = os.getenv("REDIS_URL", "redis://animagent-redis:6379")

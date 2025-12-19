@@ -2,8 +2,10 @@ import json
 import logging
 import logging
 import httpx
+import asyncio
+import json
 from typing import Dict, List, Any
-from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME, TEXT_MODEL_LITE
+from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME, TEXT_MODEL_LITE, TEXT_MODEL_LIST
 
 logger = logging.getLogger(__name__)
 
@@ -74,22 +76,36 @@ class LLMClient:
             "include_reasoning": False
         }
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=120)
-            response.raise_for_status()
-            result = response.json()
+        max_retries = len(TEXT_MODEL_LIST)
+        retry_delay = 1
+
+        for idx, model_name in enumerate(TEXT_MODEL_LIST):
+            logger.info(f"Step 2: Structuring Content - Attempt {idx + 1}/{max_retries} using model: {model_name}")
+            payload["model"] = model_name
             
-            content_str = result['choices'][0]['message']['content']
-            
-            # The structure should be a list of objects
-            parsed_content = json.loads(content_str)
-            return parsed_content
-            
-        except Exception as e:
-            logger.error(f"LLM Processing Failed: {e}")
-            # Fallback: Return a simple structure if LLM fails? Or raise.
-            raise
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=120)
+                response.raise_for_status()
+                result = response.json()
+                
+                content_str = result['choices'][0]['message']['content']
+                
+                # The structure should be a list of objects
+                parsed_content = json.loads(content_str)
+                return parsed_content
+                
+            except (httpx.RequestError, httpx.HTTPStatusError, httpx.RemoteProtocolError, json.JSONDecodeError) as e:
+                logger.warning(f"LLM Processing Failed with model {model_name}: {e}")
+                if idx < max_retries - 1:
+                    logger.info(f"Retrying with next model in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error(f"All models failed. Last error: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"LLM Processing Unexpected Error with model {model_name}: {e}")
+                raise
 
 
     async def get_chat_response(self, user_message: str, history: List[Dict] = None) -> Dict[str, Any]:
