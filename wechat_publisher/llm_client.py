@@ -36,7 +36,8 @@ class LLMClient:
                     "level": {"type": "integer"}, # For headers
                     "style": {"type": "string"} # Optional custom style hints
                 },
-                "required": ["type", "content"]
+                "required": ["type", "content"],
+                "additionalProperties": False
             }
         }
 
@@ -72,8 +73,7 @@ class LLMClient:
                     "strict": True,
                     "schema": json_schema
                 }
-            },
-            "include_reasoning": False
+            }
         }
 
         max_retries = len(TEXT_MODEL_LIST)
