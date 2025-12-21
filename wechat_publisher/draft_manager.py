@@ -122,18 +122,26 @@ class DraftManager:
         # Note: We need to make sure we don't break existing HTML tags if text contains them
         return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
 
-    def create_draft(self, title: str, author: str, digest: str, content_html: str, thumb_media_id: str, content_source_url: str = "") -> str:
+    def create_draft(self, title: str, author: str, digest: str, content_html: str, thumb_media_id: str, content_source_url: str = "", audio_media_id: str = None) -> str:
         """
         Submits the draft to WeChat. Returns media_id of the draft.
         """
         token = token_manager.get_token()
         url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
         
+        # Insert Audio if present
+        final_content = content_html
+        if audio_media_id:
+             # WeChat <mpvoice> tag format
+             # Must be at the beginning? User said "插到文章的一开头"
+             audio_tag = f'<p><mpvoice voice_encode_fileid="{audio_media_id}" class="js_editor_audio audio_iframe"></mpvoice></p>'
+             final_content = audio_tag + content_html
+
         article_payload = {
             "title": title,
             "author": author,
             "digest": digest,
-            "content": content_html,
+            "content": final_content,
             "thumb_media_id": thumb_media_id,
             "show_cover_pic": 1, 
             "need_open_comment": 1, 

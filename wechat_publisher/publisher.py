@@ -21,14 +21,60 @@ async def wechat_public_article(
     preview_wxname: str = "",
     preview_email: str = "",
     auto_publish: bool = False,
-    use_llm_parser: bool = False # Default to False (Regex) for robustness
+    use_llm_parser: bool = False, # Default to False (Regex) for robustness
+    audio_url: str = None,
+    audio_size: int = None,
+    audio_duration: int = None
 ) -> Dict[str, Any]:
     """
     Main SDK function to publish an article to WeChat Public Account.
     """
     
     try:
-        # 1. Image Processing
+        # 1. Audio Processing (Download & Upload)
+        audio_media_id = None
+        if audio_url:
+            logger.info(f"Processing Audio: {audio_url}")
+            
+            # Check Limits (2MB and 60s)
+            skip_audio = False
+            limit_size = 2 * 1024 * 1024 # 2MB
+            limit_duration = 60 # 60 seconds
+            
+            if audio_size and audio_size > limit_size:
+                logger.warning(f"Audio size ({audio_size} bytes) exceeds WeChat limit ({limit_size} bytes). Skipping audio.")
+                skip_audio = True
+            
+            if audio_duration and audio_duration > limit_duration:
+                logger.warning(f"Audio duration ({audio_duration} s) exceeds WeChat limit ({limit_duration} s). Skipping audio.")
+                skip_audio = True
+                
+            if not skip_audio:
+                try:
+                    # Reuse media_client which supports uploading from URL if type='url'
+                    # But wait, upload_permanent_material expects a dict
+                    audio_data = {
+                        "image_type": "url", # Legacy key name used in media_client._get_bytes_content
+                        "media_url": audio_url
+                    }
+                    audio_media_id = media_client.upload_permanent_material(
+                        audio_data, 
+                        material_type="voice"
+                    )
+                    logger.info(f"Audio uploaded successfully. Media ID: {audio_media_id}")
+                except Exception as e:
+                    logger.error(f"Failed to upload audio: {e}")
+                    # Optional: Decide if we should fail the whole process or just skip audio
+                    # User asked: "如果这个新功能能支持的话，我们就可以改" implies it's a feature.
+                    # If audio is provided but fails, maybe we should error out?
+                    # Let's log error and continue without audio for robustness, or raise?
+                    # "用户上传了音频，我们也只支持一个音频，那这个 audio 呢，就应该插到文章的一开头"
+                    # Raising error seems safer so user knows audio failed.
+                    raise Exception(f"Failed to process audio: {e}")
+            else:
+                 logger.info("Audio skipped due to limits.")
+
+        # 2. Image Processing
         logger.info("Step 1: Processing Images...")
         image_url_map = {} # index -> wechat_url
         cover_media_id = None
@@ -84,7 +130,8 @@ async def wechat_public_article(
             digest=digest,
             content_html=content_html,
             thumb_media_id=cover_media_id,
-            content_source_url=content_source_url
+            content_source_url=content_source_url,
+            audio_media_id=audio_media_id
         )
         logger.info(f"Draft Created! Media ID: {draft_media_id}")
         

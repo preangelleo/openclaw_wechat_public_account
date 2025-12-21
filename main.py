@@ -65,6 +65,9 @@ class UnifiedPublishRequest(BaseModel):
     preview_wxname: str = Field("", description="Preview WeChat ID.")
     preview_email: str = Field("", description="Preview Email.")
     use_llm_parser: bool = Field(True, description="Use LLM Parser? Default True for better structure.")
+    audio_url: Optional[str] = Field(None, description="URL of the audio file to insert at the top of the article.")
+    audio_size: Optional[int] = Field(None, description="Size of the audio file in bytes.")
+    audio_duration: Optional[int] = Field(None, description="Duration of the audio file in seconds.")
 
     # For Media (Image/Video/Voice)
     title: str = Field("", description="Title (Required for Article/Video).")
@@ -97,7 +100,10 @@ async def publish_endpoint(request: UnifiedPublishRequest):
                 preview_wxname=request.preview_wxname,
                 preview_email=request.preview_email,
                 auto_publish=request.auto_publish,
-                use_llm_parser=request.use_llm_parser
+                use_llm_parser=request.use_llm_parser,
+                audio_url=request.audio_url,
+                audio_size=request.audio_size,
+                audio_duration=request.audio_duration
             )
         else:
             # Media Publish

@@ -55,10 +55,15 @@ Creates a new draft in WeChat Official Account. Supports Markdown content with T
       "image_url": "https://example.com/cover.jpg"
     }
   ],
-  "article_markdown": "# Title\n\nContent with **Markdown**.\n\n![alt](image_1)"
+  "article_markdown": "# Title\n\nContent with **Markdown**.\n\n![alt](image_1)",
+  "audio_url": "https://example.com/audio.mp3",
+  "audio_size": 1048576,
+  "audio_duration": 45
 }
 ```
 > **Note**: `use_llm_parser: true` is recommended for best table/list rendering.
+> **Note**: `audio_url` is optional. If provided, it inserts an audio player at the top of the article.
+> **Limits**: Audio file must be **< 2MB** and **< 60 seconds** (WeChat Permanent Voice Material Limit). If `audio_size` or `audio_duration` exceed these limits, the audio upload will be **skipped** to avoid API errors.
 
 ---
 
