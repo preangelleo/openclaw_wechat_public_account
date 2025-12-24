@@ -10,7 +10,39 @@ logger = logging.getLogger(__name__)
 
 class DraftManager:
     def __init__(self):
-        pass
+        # Found via inspection of user-edited draft (2025-12-24)
+        self.WECHAT_ACCOUNT_BIZ = "MjM5MzM4MzQwMw==" 
+        self.WECHAT_ACCOUNT_ALIAS = "wanglijie1979"
+        self.WECHAT_ACCOUNT_NICKNAME = "王利杰"
+        self.WECHAT_HEAD_IMG = "http://mmbiz.qpic.cn/mmbiz_png/icktoa6sia2tnWTJ5hrdZ3NTORibqNGvdkEydX2hBKpicVzmSauJriaF7AS5CMoicMzibn0RYWzaV9tiagXIC3lTvHIPtQ/0?wx_fmt=png"
+        self.WECHAT_SIGNATURE = "教你解读市场周期、分析宏观数据，做出高胜率的投资决策。我们也会讨论AI、比特币和全球宏观趋势。"
+
+    def _get_account_card_html(self) -> str:
+        """
+        Generates the HTML for the Official Account Card.
+        Uses the exact snippet structure found in a valid WeChat draft.
+        """
+        if not self.WECHAT_ACCOUNT_BIZ:
+            return ""
+
+        # Exact structure extracted from inspection
+        card_html = f'''
+        <p><br/></p>
+        <mp-common-profile 
+            class="js_uneditable custom_select_card mp_profile_iframe" 
+            data-pluginname="mpprofile" 
+            data-nickname="{self.WECHAT_ACCOUNT_NICKNAME}" 
+            data-alias="{self.WECHAT_ACCOUNT_ALIAS}" 
+            data-from="0" 
+            data-headimg="{self.WECHAT_HEAD_IMG}" 
+            data-signature="{self.WECHAT_SIGNATURE}" 
+            data-id="{self.WECHAT_ACCOUNT_BIZ}" 
+            data-is_biz_ban="0" 
+            data-service_type="1" 
+            data-verify_status="1"
+        ></mp-common-profile>
+        '''
+        return card_html
 
     def _render_html(self, structured_content: List[Dict[str, Any]], image_url_map: Dict[int, str]) -> str:
         """
@@ -136,6 +168,11 @@ class DraftManager:
              # Must be at the beginning? User said "插到文章的一开头"
              audio_tag = f'<p><mpvoice voice_encode_fileid="{audio_media_id}" class="js_editor_audio audio_iframe"></mpvoice></p>'
              final_content = audio_tag + content_html
+
+        # Inject Official Account Card (End of Article)
+        account_card_html = self._get_account_card_html()
+        if account_card_html:
+            final_content = final_content + account_card_html
 
         article_payload = {
             "title": title,

@@ -52,7 +52,11 @@ class LLMClient:
            - CRITICAL: Images MUST be extracted as their own individual JSON objects with type="image".
            - CRITICAL: Do NOT leave "image_{index}" inside a paragraph content string. Break the paragraph before and after the image.
            - Example: "Text... image_1 ...Text" -> Paragraph("Text..."), Image(index=1), Paragraph("...Text").
-        4. Parse Lists -> type: "list", content: inner HTML `<ul>/<li>` string. IMPORTANT: Do not include newlines between `<li>` tags. Output compact HTML.
+        4. Parse Lists -> type: "list", content: inner HTML `<ul>/<li>` string.
+       - CRITICAL: Keep each list item in a SINGLE `<li>` tag.
+       - CRITICAL: Do NOT split a list item into multiple `<li>` tags if it contains a colon (:) or hyphen (-).
+       - Example: "- Title: Description" MUST become `<li>Title: Description</li>`, NOT `<li>Title</li><li>: Description</li>`.
+       - IMPORTANT: Do not include newlines between `<li>` tags. Output compact HTML.
         5. Parse Blockquotes -> type: "quote".
         6. Parse Tables -> type: "table", content: valid HTML `<table>` string with simple inline styles (border, padding).
         7. Keep the content clean. Remove markdown symbols like ## for headers, BUT PRESERVE bold syntax (**text**) or convert it to <b>text</b> or <strong>text</strong> so it can be rendered.
