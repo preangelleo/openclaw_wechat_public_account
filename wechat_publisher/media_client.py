@@ -88,6 +88,21 @@ class MediaClient:
         data = resp.json()
         
         if "url" not in data:
+             # Retry Logic for 40001 (Invalid Token)
+             if data.get("errcode") == 40001:
+                 logger.warning("AccessToken Expired (40001) in upload_image. Refreshing...")
+                 token_manager.refresh_token()
+                 token = token_manager.get_token()
+                 url = f"https://api.weixin.qq.com/cgi-bin/media/uploadimg?access_token={token}"
+                 # Re-send request
+                 # Note: 'files' dictates can be consumed? No, tuple ('name', bytes, mime) is reusable.
+                 resp = requests.post(url, files={'media': ('image.jpg', content, 'image/jpeg')}, timeout=60)
+                 data = resp.json()
+                 if "url" in data:
+                     wechat_url = data["url"]
+                     self.redis_client.hset(self.url_map_key, content_hash, wechat_url)
+                     return wechat_url
+
              raise Exception(f"Failed to upload image: {data}")
              
         wechat_url = data["url"]
@@ -243,6 +258,16 @@ class MediaClient:
         data = resp.json()
         
         if "media_id" not in data:
+            if data.get("errcode") == 40001:
+                 logger.warning("AccessToken Expired (40001) in upload_temporary. Refreshing...")
+                 token_manager.refresh_token()
+                 token = token_manager.get_token()
+                 url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type={material_type}"
+                 resp = requests.post(url, files={'media': (filename, content, mime)}, timeout=60)
+                 data = resp.json()
+                 if "media_id" in data:
+                     return data["media_id"]
+
             raise Exception(f"Failed to upload temporary material: {data}")
         return data["media_id"]
 
