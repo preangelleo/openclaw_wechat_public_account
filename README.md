@@ -147,6 +147,7 @@ The service now includes an **Interactive Chat Bot** handling standard WeChat te
 
 ### Features
 - **Auto-Reply**: Chats with users using the configured LLM.
+- **Welcome Message**: Automatically sends a welcome message (from `wechat_publisher/welcome.md`) to new subscribers.
 - **Safe Mode**: Supports WeChat's encryption/decryption (AES).
 
 ---
@@ -208,7 +209,7 @@ If you cannot use the script:
     ```bash
     rsync -avz -e "ssh -i /Users/lgg/coding/credentials/animagent.pem" \
         /Users/lgg/coding/wechat/wechat-public-account/ \
-        ubuntu@animagent.ai:/home/ubuntu/animagent-frontend/wechat-public-account/ \
+        ubuntu@animagent.ai:/home/ubuntu/coding/wechat-public-account/ \
         --exclude 'test*.py' \
         --exclude '__pycache__' \
         --exclude '.git'

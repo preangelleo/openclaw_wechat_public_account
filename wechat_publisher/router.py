@@ -4,6 +4,7 @@ from wechatpy.exceptions import InvalidSignatureException
 from wechatpy import parse_message
 from wechatpy.crypto import WeChatCrypto
 import logging
+import os
 from .config import WECHAT_TOKEN, WECHAT_AES_KEY, WECHAT_APPID
 from .bot_handler import process_user_message_background
 from .sync_service import sync_service
@@ -172,9 +173,34 @@ async def wechat_message_handler(
             
         # 5. Handle Subscribe Events (Optional)
         elif msg.type == 'event' and msg.event == 'subscribe':
-             # You can return a passive XML reply here instantly for welcome message
-             # For now, just return success
-             pass
+             # Return a passive XML reply instantly for welcome message
+             logger.info(f"New User Subscribed: {msg.source}")
+             
+             # Read welcome message from welcome.md
+             try:
+                 current_dir = os.path.dirname(os.path.abspath(__file__))
+                 welcome_path = os.path.join(current_dir, "welcome.md")
+                 
+                 if os.path.exists(welcome_path):
+                     with open(welcome_path, "r", encoding="utf-8") as f:
+                         welcome_content = f.read()
+                 else:
+                     logger.warning(f"welcome.md not found at {welcome_path}")
+                     welcome_content = """感谢您订阅王利杰的个人公众号，我的公众号内容和微信视频号内容基本保持一致，但由于微信公众号每日发送的数量限制，所以微信视频号更新会更加及时，也会有个别视频号内容不在匹配微信公众号文章的情况，所以也请您一并关注我的微信视频号。如果您有什么特别的、具有代表性的当代宏观政策或者经济相关的问题，欢迎私信我，如果题目有大众性，我会优先考虑制作视频及文章发布在本频道。如需邮件联系，请发送至：me@leowang.net """
+             except Exception as e:
+                 logger.error(f"Failed to read welcome.md: {e}")
+                 welcome_content = """感谢您订阅王利杰的个人公众号，我的公众号内容和微信视频号内容基本保持一致，但由于微信公众号每日发送的数量限制，所以微信视频号更新会更加及时，也会有个别视频号内容不在匹配微信公众号文章的情况，所以也请您一并关注我的微信视频号。如果您有什么特别的、具有代表性的当代宏观政策或者经济相关的问题，欢迎私信我，如果题目有大众性，我会优先考虑制作视频及文章发布在本频道。如需邮件联系，请发送至：me@leowang.net """
+
+             log_message(msg.source, welcome_content, msg_type='text', direction='MT')
+             
+             reply = TextReply(content=welcome_content, message=msg)
+             reply_xml = reply.render()
+             
+             if msg_signature:
+                encrypted_xml = crypto.encrypt_message(reply_xml, nonce, timestamp)
+                return Response(content=encrypted_xml, media_type="application/xml")
+             else:
+                return Response(content=reply_xml, media_type="application/xml")
              
     except InvalidSignatureException:
         logger.warning(f"Invalid Signature. Sig: {signature} TS: {timestamp}")

@@ -5,12 +5,12 @@ import httpx
 import asyncio
 import json
 from typing import Dict, List, Any
-from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME, TEXT_MODEL_LITE, TEXT_MODEL_LIST
+from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME, TEXT_MODEL, TEXT_MODEL_LITE, TEXT_MODEL_LIST
 
 logger = logging.getLogger(__name__)
 
 class LLMClient:
-    def __init__(self, model=TEXT_MODEL_LITE):
+    def __init__(self, model=TEXT_MODEL):
         self.model = model
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
         self.headers = {
@@ -52,11 +52,17 @@ class LLMClient:
            - CRITICAL: Images MUST be extracted as their own individual JSON objects with type="image".
            - CRITICAL: Do NOT leave "image_{index}" inside a paragraph content string. Break the paragraph before and after the image.
            - Example: "Text... image_1 ...Text" -> Paragraph("Text..."), Image(index=1), Paragraph("...Text").
-        4. Parse Lists -> type: "list", content: inner HTML `<ul>/<li>` string.
-       - CRITICAL: Keep each list item in a SINGLE `<li>` tag.
-       - CRITICAL: Do NOT split a list item into multiple `<li>` tags if it contains a colon (:) or hyphen (-).
-       - Example: "- Title: Description" MUST become `<li>Title: Description</li>`, NOT `<li>Title</li><li>: Description</li>`.
-       - IMPORTANT: Do not include newlines between `<li>` tags. Output compact HTML.
+        4. Parse Lists -> type: "list" OR "paragraph".
+           - WeChat Renders Lists Poorly. AVOID LISTS (<ul>/<li>) if possible.
+           - ONLY use type="list" if:
+             a) Each list item is very short (< 20 chars).
+             b) AND there are NO colons (:) or hyphens (-) inside the list item text (which imply a title/description structure).
+           - OTHERWISE (for long items or items with ":"), convert the list into a series of type="paragraph" objects.
+             - Example input: "- Title: Description..."
+             - Output as paragraphs: Paragraph("Title: Description...")
+             - Do NOT split the title and description into separate paragraphs. Keep them together as one paragraph.
+           - If using type="list", output content as inner HTML `<ul>/<li>` string.
+           - CRITICAL: Keep each list item in a SINGLE `<li>` tag. Do not include newlines between tags.
         5. Parse Blockquotes -> type: "quote".
         6. Parse Tables -> type: "table", content: valid HTML `<table>` string with simple inline styles (border, padding).
         7. Keep the content clean. Remove markdown symbols like ## for headers, BUT PRESERVE bold syntax (**text**) or convert it to <b>text</b> or <strong>text</strong> so it can be rendered.
