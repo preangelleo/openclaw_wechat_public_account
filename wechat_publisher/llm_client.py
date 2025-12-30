@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import logging
 import httpx
 import asyncio
@@ -168,6 +169,18 @@ class LLMClient:
         - Return pure JSON matching the schema.
         - 'reply_content' must be plain text, no markdown headers/bolding, < 500 chars.
         """
+        
+        # Inject Welcome Context (Dynamically read welcome.md)
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            welcome_path = os.path.join(current_dir, "welcome.md")
+            if os.path.exists(welcome_path):
+                with open(welcome_path, "r", encoding="utf-8") as f:
+                    welcome_content = f.read()
+                system_prompt += f"\n\nCONTEXT (Welcome Message Info):\n{welcome_content}\nUse this info to answer user questions about contact, other channels, or the bot itself."
+        except Exception as e:
+            logger.warning(f"Failed to inject welcome context: {e}")
+            
         messages.append({"role": "system", "content": system_prompt})
         
         if history:
