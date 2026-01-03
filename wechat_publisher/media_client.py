@@ -41,7 +41,7 @@ class MediaClient:
         elif src_type == 'url':
             url = media_data.get('image_url') or media_data.get('media_url')
             if not url: raise ValueError("Missing URL")
-            resp = requests.get(url, timeout=60)
+            resp = requests.get(url, headers={'User-Agent': 'AnimAgent-Docker/1.0'}, timeout=60)
             resp.raise_for_status()
             return resp.content
             
