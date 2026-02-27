@@ -49,4 +49,4 @@ ssh -i ${PEM_PATH} ${REMOTE_USER}@${REMOTE_HOST} "cd ${REMOTE_DIR} && docker com
 
 echo "✅ Deployment Complete!"
 echo "📜 Tailing logs (Ctrl+C to exit)..."
-ssh -i ${PEM_PATH} ${REMOTE_USER}@${REMOTE_HOST} "docker logs -f --tail 50 ${SERVICE_NAME}"
+ssh -i ${PEM_PATH} ${REMOTE_USER}@${REMOTE_HOST} "docker logs --tail 50 ${SERVICE_NAME}"
