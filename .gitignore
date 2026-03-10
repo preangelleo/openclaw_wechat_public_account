@@ -15,3 +15,13 @@ api_log.txt
 
 # Internal Documentation
 README-INTERNAL.md
+
+# Legacy Documentation Tracking Removed
+DEPLOYMENT.md
+DEVELOPMENT_GUIDE_WECHAT_BOT.md
+Python 微信公众号发布框架指南.md
+README-SETUP.md
+process_logic.md
+wechat_backend_configuration.md
+*.jpg
+deploy*.sh
