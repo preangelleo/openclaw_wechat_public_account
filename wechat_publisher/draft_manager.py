@@ -154,11 +154,11 @@ class DraftManager:
         # Note: We need to make sure we don't break existing HTML tags if text contains them
         return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
 
-    def create_draft(self, title: str, author: str, digest: str, content_html: str, thumb_media_id: str, content_source_url: str = "", audio_media_id: str = None) -> str:
+    def create_draft(self, appid: str, secret: str, title: str, author: str, digest: str, content_html: str, thumb_media_id: str, content_source_url: str = "", audio_media_id: str = None, redis_url: str = None) -> str:
         """
         Submits the draft to WeChat. Returns media_id of the draft.
         """
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
         
         # Insert Audio if present
@@ -205,11 +205,11 @@ class DraftManager:
             
         return data["media_id"]
 
-    def publish_draft(self, media_id: str) -> str:
+    def publish_draft(self, appid: str, secret: str, media_id: str, redis_url: str = None) -> str:
         """
         Publishes a draft.
         """
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/freepublish/submit?access_token={token}"
         
         payload = {
@@ -224,11 +224,11 @@ class DraftManager:
         else:
             raise Exception(f"Failed to publish draft: {data}")
 
-    def get_draft_url(self, media_id: str) -> str:
+    def get_draft_url(self, appid: str, secret: str, media_id: str, redis_url: str = None) -> str:
         """
         Retrieves the permanent URL of the draft by media_id.
         """
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/draft/get?access_token={token}"
         
         # WeChat 'get' API usually takes json={"media_id": ...}
@@ -255,11 +255,11 @@ class DraftManager:
         
         return ""
 
-    def send_preview(self, media_id: str, wxname: str) -> bool:
+    def send_preview(self, appid: str, secret: str, media_id: str, wxname: str, redis_url: str = None) -> bool:
         """
         Sends a preview of the draft to a specific WeChat user by their wxname (WeChat ID).
         """
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         # Preview API endpoint
         url = f"https://api.weixin.qq.com/cgi-bin/message/mass/preview?access_token={token}"
         

@@ -8,16 +8,29 @@ import mimetypes
 from PIL import Image
 from typing import Dict, Optional, Union, List
 from .token_manager import token_manager
-from .config import REDIS_URL
 import redis
 
 logger = logging.getLogger(__name__)
 
 class MediaClient:
-    def __init__(self, redis_url=REDIS_URL):
-        self.redis_client = redis.from_url(redis_url)
-        self.url_map_key = "wechat_media_url_map" # Map hash -> wechat_url (for body images)
-        self.media_id_map_key = "wechat_media_id_map" # Map hash -> media_id (for permanent materials)
+    def __init__(self):
+        self.redis_clients = {}
+        
+    def _get_redis_client(self, redis_url: str):
+         if not redis_url: return None
+         if redis_url not in self.redis_clients:
+             try:
+                 self.redis_clients[redis_url] = redis.from_url(redis_url)
+             except Exception as e:
+                 logger.warning(f"Redis connection failed: {e}")
+                 self.redis_clients[redis_url] = None
+         return self.redis_clients[redis_url]
+
+    def _get_url_map_key(self, appid: str):
+        return f"wechat_media_url_map:{appid}"
+
+    def _get_media_id_map_key(self, appid: str):
+        return f"wechat_media_id_map:{appid}"
 
     def _get_bytes_content(self, media_data: Dict) -> bytes:
         """
@@ -67,20 +80,23 @@ class MediaClient:
         image.save(output, format="JPEG", quality=quality)
         return output.getvalue()
 
-    def upload_image_for_article(self, image_data: Dict) -> str:
+    def upload_image_for_article(self, appid: str, secret: str, image_data: Dict, redis_url: str = None) -> str:
         """
         Uploads an image to be used INSIDE the article body.
         Returns the WeChat URL (http://mmbiz.qpic.cn/...).
         """
         content = self._get_bytes_content(image_data)
         content_hash = self._calculate_hash(content)
+        redis_client = self._get_redis_client(redis_url)
+        url_map_key = self._get_url_map_key(appid)
         
-        cached_url = self.redis_client.hget(self.url_map_key, content_hash)
-        if cached_url:
-            return cached_url.decode('utf-8')
+        if redis_client:
+            cached_url = redis_client.hget(url_map_key, content_hash)
+            if cached_url:
+                return cached_url.decode('utf-8')
 
         content = self._compress_image(content)
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/media/uploadimg?access_token={token}"
         files = {'media': ('image.jpg', content, 'image/jpeg')}
         
@@ -91,43 +107,41 @@ class MediaClient:
              # Retry Logic for 40001 (Invalid Token)
              if data.get("errcode") == 40001:
                  logger.warning("AccessToken Expired (40001) in upload_image. Refreshing...")
-                 token_manager.refresh_token()
-                 token = token_manager.get_token()
+                 token = token_manager.refresh_token(appid, secret, redis_url)
                  url = f"https://api.weixin.qq.com/cgi-bin/media/uploadimg?access_token={token}"
                  # Re-send request
-                 # Note: 'files' dictates can be consumed? No, tuple ('name', bytes, mime) is reusable.
                  resp = requests.post(url, files={'media': ('image.jpg', content, 'image/jpeg')}, timeout=60)
                  data = resp.json()
                  if "url" in data:
                      wechat_url = data["url"]
-                     self.redis_client.hset(self.url_map_key, content_hash, wechat_url)
+                     if redis_client:
+                         redis_client.hset(url_map_key, content_hash, wechat_url)
                      return wechat_url
 
              raise Exception(f"Failed to upload image: {data}")
              
         wechat_url = data["url"]
-        self.redis_client.hset(self.url_map_key, content_hash, wechat_url)
+        if redis_client:
+            redis_client.hset(url_map_key, content_hash, wechat_url)
         return wechat_url
 
-    def upload_permanent_material(self, media_data: Dict, material_type: str = "image", title: str = "", introduction: str = "") -> str:
+    def upload_permanent_material(self, appid: str, secret: str, media_data: Dict, material_type: str = "image", title: str = "", introduction: str = "", redis_url: str = None) -> str:
         """
         General function to upload permanent materials (image, voice, video, thumb).
         Video requires title and introduction.
         """
         content = self._get_bytes_content(media_data)
         content_hash = self._calculate_hash(content)
+        redis_client = self._get_redis_client(redis_url)
+        media_id_map_key = self._get_media_id_map_key(appid)
         
-        # Determine Cache Prefix to separate Image/Video/Voice namespaces in same hash map?
-        # Or just mix them. Hash is MD5 of content, so collision is unlikely unless content identic.
-        # But wait, video needs extra fields (title/intro), if those change, hash of content is same but output different?
-        # WeChat Permanent Video doesn't update metadata easily. We will cache by CONTENT hash only for now.
-        
-        cached_id = self.redis_client.hget(self.media_id_map_key, content_hash)
-        if cached_id:
-             logger.info(f"Material hit cache: {content_hash}")
-             return cached_id.decode('utf-8')
+        if redis_client:
+            cached_id = redis_client.hget(media_id_map_key, content_hash)
+            if cached_id:
+                 logger.info(f"Material hit cache: {content_hash}")
+                 return cached_id.decode('utf-8')
 
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type={material_type}"
         
         # Prepare Files
@@ -167,7 +181,8 @@ class MediaClient:
 
             if "media_id" in data:
                  media_id = data["media_id"]
-                 self.redis_client.hset(self.media_id_map_key, content_hash, media_id)
+                 if redis_client:
+                     redis_client.hset(media_id_map_key, content_hash, media_id)
                  return media_id
             
             # Error Handling: Check for validation errors
@@ -175,24 +190,25 @@ class MediaClient:
             if errcode == 40001:
                 # Token Expired
                 logger.warning(f"AccessToken Expired (40001). Refreshing...")
-                token_manager.refresh_token()
+                token = token_manager.refresh_token(appid, secret, redis_url)
                 # Retry once
-                token = token_manager.get_token()
                 url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type={material_type}"
                 resp = requests.post(url, files={'media': (filename, content, mime)}, data=payload, timeout=300)
                 data = resp.json()
                 if "media_id" in data:
-                     self.redis_client.hset(self.media_id_map_key, content_hash, data["media_id"])
+                     if redis_client:
+                         redis_client.hset(media_id_map_key, content_hash, data["media_id"])
                      return data["media_id"]
 
             if errcode in [45001, 88000]: # Capacity full
                  logger.warning(f"Upload failed (Capacity). Attempting cleanup.")
-                 self.cleanup_oldest_materials(5)
+                 self.cleanup_oldest_materials(appid, secret, redis_url, 5)
                  # Retry
                  resp = requests.post(url, files={'media': (filename, content, mime)}, data=payload, timeout=300)
                  data = resp.json()
                  if "media_id" in data:
-                      self.redis_client.hset(self.media_id_map_key, content_hash, data["media_id"]) 
+                      if redis_client:
+                          redis_client.hset(media_id_map_key, content_hash, data["media_id"]) 
                       return data["media_id"]
 
             raise Exception(f"Failed to upload {material_type}: {data}")
@@ -200,16 +216,16 @@ class MediaClient:
         except Exception as e:
             raise e
 
-    def get_material_count(self) -> int:
-        token = token_manager.get_token()
+    def get_material_count(self, appid: str, secret: str, redis_url: str = None) -> int:
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/material/get_materialcount?access_token={token}"
         resp = requests.get(url, timeout=30)
         data = resp.json()
         if "image_count" not in data: return 0
         return data["image_count"] # Just image count for cleaning strategy
 
-    def batch_get_materials(self, offset: int, count: int) -> List[str]:
-        token = token_manager.get_token()
+    def batch_get_materials(self, appid: str, secret: str, offset: int, count: int, redis_url: str = None) -> List[str]:
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/material/batchget_material?access_token={token}"
         payload = {
             "type": "image",
@@ -224,27 +240,27 @@ class MediaClient:
                 media_ids.append(item["media_id"])
         return media_ids
 
-    def delete_material(self, media_id: str):
-        token = token_manager.get_token()
+    def delete_material(self, appid: str, secret: str, media_id: str, redis_url: str = None):
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/material/del_material?access_token={token}"
         payload = {"media_id": media_id}
         requests.post(url, json=payload, timeout=30)
         logger.info(f"Deleted material: {media_id}")
 
-    def cleanup_oldest_materials(self, count_to_delete=5):
-        total_count = self.get_material_count()
+    def cleanup_oldest_materials(self, appid: str, secret: str, redis_url: str = None, count_to_delete=5):
+        total_count = self.get_material_count(appid, secret, redis_url)
         if total_count == 0: return
         offset = max(0, total_count - count_to_delete - 1)
-        media_ids = self.batch_get_materials(offset, count_to_delete + 5)
+        media_ids = self.batch_get_materials(appid, secret, offset, count_to_delete + 5, redis_url)
         for mid in media_ids[:count_to_delete]:
-            self.delete_material(mid)
+            self.delete_material(appid, secret, mid, redis_url)
 
-    def upload_temporary_material(self, media_data: Dict, material_type="image") -> str:
+    def upload_temporary_material(self, appid: str, secret: str, media_data: Dict, material_type="image", redis_url: str = None) -> str:
         content = self._get_bytes_content(media_data)
         if material_type == "image":
             content = self._compress_image(content)
             
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type={material_type}"
         
         filename = "temp.bin"
@@ -260,8 +276,7 @@ class MediaClient:
         if "media_id" not in data:
             if data.get("errcode") == 40001:
                  logger.warning("AccessToken Expired (40001) in upload_temporary. Refreshing...")
-                 token_manager.refresh_token()
-                 token = token_manager.get_token()
+                 token = token_manager.refresh_token(appid, secret, redis_url)
                  url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type={material_type}"
                  resp = requests.post(url, files={'media': (filename, content, mime)}, timeout=60)
                  data = resp.json()

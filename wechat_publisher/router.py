@@ -4,8 +4,8 @@ from wechatpy.exceptions import InvalidSignatureException
 from wechatpy import parse_message
 from wechatpy.crypto import WeChatCrypto
 import logging
+import logging
 import os
-from .config import WECHAT_TOKEN, WECHAT_AES_KEY, WECHAT_APPID
 from .bot_handler import process_user_message_background
 from .sync_service import sync_service
 from .msg_logger import log_message
@@ -22,13 +22,14 @@ async def wechat_verification(
     signature: str = Query(...),
     timestamp: str = Query(...),
     nonce: str = Query(...),
-    echostr: str = Query(...)
+    echostr: str = Query(...),
+    wx_token: str = Query(..., description="WeChat Token")
 ):
     """
     WeChat Server Verification (GET).
     """
     try:
-        check_signature(WECHAT_TOKEN, signature, timestamp, nonce)
+        check_signature(wx_token, signature, timestamp, nonce)
         return int(echostr) # Must return integer/string directly
     except InvalidSignatureException:
         raise HTTPException(status_code=403, detail="Invalid signature")
@@ -43,7 +44,13 @@ async def wechat_message_handler(
     signature: str = Query(...),
     timestamp: str = Query(...),
     nonce: str = Query(...),
-    msg_signature: str = Query(None) # Required for Safe Mode
+    msg_signature: str = Query(None), # Required for Safe Mode
+    wx_token: str = Query(...),
+    wx_aes_key: str = Query(None),
+    wx_appid: str = Query(...),
+    wx_secret: str = Query(None), # needed if background reply is used
+    openrouter_api_key: str = Query(None),
+    db_url: str = Query(None)
 ):
     """
     WeChat Message Receiver (POST).
@@ -52,12 +59,15 @@ async def wechat_message_handler(
     body = await request.body()
     
     # 2. Verify & Decrypt (Support Safe Mode)
-    crypto = WeChatCrypto(WECHAT_TOKEN, WECHAT_AES_KEY, WECHAT_APPID)
+    crypto = None
+    if wx_aes_key:
+        crypto = WeChatCrypto(wx_token, wx_aes_key, wx_appid)
+    
     try:
-        if msg_signature:
+        if msg_signature and crypto:
             decrypted_xml = crypto.decrypt_message(body, msg_signature, timestamp, nonce)
         else:
-            check_signature(WECHAT_TOKEN, signature, timestamp, nonce)
+            check_signature(wx_token, signature, timestamp, nonce)
             decrypted_xml = body
             
         # 3. Parse Message
@@ -76,10 +86,12 @@ async def wechat_message_handler(
             
             # 1. Retrieve Context
             openid = msg.source
-            history = memory_manager.get_context(openid)
+            if db_url:
+                memory_manager.db_url = db_url # Assumes memory_manager uses db_url
+            history = memory_manager.get_context(openid) if hasattr(memory_manager, 'get_context') else []
             
             # 2. Get AI Decision & Response (JSON)
-            nlu_result = await llm_client.get_chat_response(msg.content, history=history)
+            nlu_result = await llm_client.get_chat_response(msg.content, history=history, openrouter_api_key=openrouter_api_key)
             
             # 3. Update Memory (User)
             memory_manager.update_context(openid, msg.content, 'user')
@@ -95,11 +107,13 @@ async def wechat_message_handler(
                     # --- AUTO SYNC (User Request) ---
                     # Ensure DB is fresh with latest 5 articles before searching
                     try:
-                        sync_service.sync_recent_articles(limit=5)
+                        if db_url:
+                            # Need appid, secret to sync
+                            sync_service.sync_recent_articles(wx_appid, wx_secret, limit=5, db_url=db_url)
                     except Exception as e:
                         logger.error(f"Auto-sync failed: {e}")
                         
-                    articles = sync_service.search_articles(keyword)
+                    articles = sync_service.search_articles(keyword, db_url=db_url) if db_url else []
                     if articles:
                         # --- CASE A: Search Success ---
                         if len(articles) > 1:
@@ -165,7 +179,7 @@ async def wechat_message_handler(
                  reply_xml = reply.render()
 
             # 5. Encrypt & Return
-            if msg_signature:
+            if msg_signature and crypto:
                 encrypted_xml = crypto.encrypt_message(reply_xml, nonce, timestamp)
                 return Response(content=encrypted_xml, media_type="application/xml")
             else:
@@ -196,7 +210,7 @@ async def wechat_message_handler(
              reply = TextReply(content=welcome_content, message=msg)
              reply_xml = reply.render()
              
-             if msg_signature:
+             if msg_signature and crypto:
                 encrypted_xml = crypto.encrypt_message(reply_xml, nonce, timestamp)
                 return Response(content=encrypted_xml, media_type="application/xml")
              else:

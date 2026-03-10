@@ -1,40 +1,46 @@
-# WeChat Public Account Publisher Service
+# OpenClaw WeChat Publisher Service
 
-A microservice to automate publishing "image-text" articles (Drafts) and multimedia assets to a WeChat Official Account. It provides a RESTful API secured by an Admin API Key and supports deployment via Docker.
+The **OpenClaw WeChat Publisher** is a stateless, containerized microservice API built to automate publishing "image-text" articles (Drafts) and multimedia assets to WeChat Official Accounts. It supports dynamic credential injection, making it safe and easy to deploy as a multi-tenant or open-source service.
 
-## 📚 Documentation
-For a deep dive into the internal logic, state machines, and detailed workflows (including the "Email Approval" flow vs "Direct Publish"), please refer to [`process_logic.md`](./process_logic.md).
+## 📚 General Documentation
+*   **[Setup Guide (README-SETUP.md)](./README-SETUP.md)**: Instructions on how to configure your WeChat Official Account and obtain credentials.
+*   **Internal Logic Flow**: Detailed state machine documents available in `process_logic.md`.
 
 ## 1. API Usage
 
 ### Endpoint
-- **External (Public)**: `https://animagent.ai/api/weixin-publish/publish`
-- **Internal (Docker Network)**: `http://wechat-publisher:5015/publish`
 - **Method**: `POST`
+- **Path**: `/publish` (e.g. `http://your-server:5006/publish`)
 
 ### Authentication
-**Header Required**:
+**Header Required** (Deployment Gateway Security):
 `X-Admin-Api-Key: <your_admin_api_key>` 
 
-(Value can be found in `.env` as `ADMIN_API_KEY`)
+*(Configured via `ADMIN_API_KEY` in your `.env` file on deployment).*
 
 ## 2. API Reference
 
-The service exposes a **Unified Endpoint** `POST /publish` that handles different types of publishing based on the `publish_type` parameter.
+The service exposes a **Unified Endpoint** `POST /publish` that handles different types of publishing based on the `publish_type` parameter. **Because the service is stateless, all business-logic credentials must be passed in the JSON payload.**
 
 ### Request Structure
 ```json
 {
   "publish_type": "article" | "video" | "voice" | "image",
   "title": "Title String",
-  ... (type-specific fields)
+  "...": "(type-specific fields)",
+  "credentials": {
+    "wx_appid": "YOUR_WECHAT_APP_ID",
+    "wx_secret": "YOUR_WECHAT_APP_SECRET",
+    "openrouter_api_key": "YOUR_OPENROUTER_KEY",
+    "db_url": "optional_postgres_url_for_syncing"
+  }
 }
 ```
 
 ---
 
 ### A. Publish Article (Draft)
-Creates a new draft in WeChat Official Account. Supports Markdown content with Tables, Lists, and Images.
+Creates a new draft in a WeChat Official Account. Supports Markdown content with Tables, Lists, and Images. Optionally uses LLMs to structure the Markdown strictly for WeChat's DOM renderer.
 
 **Payload**:
 ```json
@@ -44,32 +50,28 @@ Creates a new draft in WeChat Official Account. Supports Markdown content with T
   "author": "Animagent Team",
   "digest": "Summary of the article.",
   "cover_image_index": 1,
-  "content_source_url": "https://animagent.ai/blog",
-  "preview_email": "user@example.com",
+  "content_source_url": "https://example.com/blog",
   "use_llm_parser": true,
   "images_list": [
     {
       "image_index": 1,
-      "image_description": "Cover Image",
       "image_type": "url",
       "image_url": "https://example.com/cover.jpg"
     }
   ],
   "article_markdown": "# Title\n\nContent with **Markdown**.\n\n![alt](image_1)",
-  "audio_url": "https://example.com/audio.mp3",
-  "audio_size": 1048576,
-  "audio_duration": 45
+  "credentials": {
+    "wx_appid": "...",
+    "wx_secret": "...",
+    "openrouter_api_key": "..."
+  }
 }
 ```
-> **Note**: `use_llm_parser: true` is recommended for best table/list rendering.
-> **Note**: `audio_url` is optional. If provided, it inserts an audio player at the top of the article.
-> **Limits**: Audio file must be **< 2MB** and **< 60 seconds** (WeChat Permanent Voice Material Limit). If `audio_size` or `audio_duration` exceed these limits, the audio upload will be **skipped** to avoid API errors.
 
 ---
 
-### B. Upload Video (Permanent)
-Uploads a video file to WeChat Permanent Material storage.
-**Limit**: MAX 20MB.
+### B. Upload Video (Permanent Material)
+Uploads a video file to WeChat Permanent Material storage. **Limit**: MAX 20MB.
 
 **Payload**:
 ```json
@@ -78,18 +80,17 @@ Uploads a video file to WeChat Permanent Material storage.
   "title": "Video Title",
   "introduction": "Video Description",
   "media_source": {
-    "image_type": "base64", 
-    "image_base64": "data:video/mp4;base64,AAAA..." 
-  }
+    "image_type": "url", 
+    "image_url": "https://example.com/video.mp4" 
+  },
+  "credentials": { ... }
 }
 ```
-*Note: `image_type` supports "url", "base64", or "path" (internal).*
 
 ---
 
-### C. Upload Voice (Permanent)
-Uploads an audio file (MP3/AMR) to WeChat Permanent Material storage.
-**Limit**: MAX 2MB, < 60 seconds recommended.
+### C. Upload Voice (Permanent Material)
+Uploads an audio file (MP3/AMR) to WeChat. **Limit**: MAX 2MB, < 60 seconds recommended.
 
 **Payload**:
 ```json
@@ -99,14 +100,15 @@ Uploads an audio file (MP3/AMR) to WeChat Permanent Material storage.
   "media_source": {
     "image_type": "url",
     "image_url": "https://example.com/audio.mp3"
-  }
+  },
+  "credentials": { ... }
 }
 ```
 
 ---
 
-### D. Upload Image (Permanent)
-Uploads an image to WeChat Permanent Material storage (e.g., for creating a gallery).
+### D. Upload Image (Permanent Material)
+Uploads an image to WeChat (e.g., for creating a gallery).
 
 **Payload**:
 ```json
@@ -115,113 +117,38 @@ Uploads an image to WeChat Permanent Material storage (e.g., for creating a gall
   "media_source": {
      "image_type": "base64",
      "image_base64": "..."
-  }
+  },
+  "credentials": { ... }
 }
 ```
 
+---
 
+## 3. Interactive Webhook Bot
+The SDK contains a fully functional WeChat Webhook receiver located at `/wechat/callback`. 
 
-## 3. Article Sync & Database features
+To support stateless multi-tenant deployment, **all decryption keys must be provided as URL parameters** when configuring your Webhook inside the WeChat Admin Portal.
 
-This service validates and syncs published articles to a local PostgreSQL database for quick retrieval and features like "Article Card Reply".
+Example Webhook URL configuration:
+`https://your-server.com/wechat/callback?wx_token=XXX&wx_aes_key=YYY&wx_appid=ZZZ&wx_secret=AAA`
 
-### Database Schema
-Two main tables are created in `animagent_backend_api` DB:
-1.  **`wechat_published_articles`**: Stores synced articles (Title, URL, Thumb, Digest).
-2.  **`wechat_user_logs`**: Logs all user interactions (MO/MT) for analytics.
-
-### Features
--   **Sync Articles**: Fetches articles from WeChat `material/batchget_material` API and saves them locally.
--   **Article Search**: Users can send "文章 [Keyword]" to get a matching article card.
--   **Logging**: All chat messages and bot replies are logged.
-
-## 4. Interactive Bot (Chat)
-
-The service now includes an **Interactive Chat Bot** handling standard WeChat text messages.
-
-### Logic Flow
-1.  **Webhook**: Receives POST request from WeChat at `/wechat/callback`.
-2.  **Synchronous Reply**: to bypass "Unauthorized API (48001)" errors on unverified accounts, the bot uses **passive synchronous replies**.
-    - It must generate and return the XML response within **5 seconds**.
-    - Uses `google/gemini-2.5-flash-lite` (via OpenRouter) for speed.
-
-### Features
-- **Auto-Reply**: Chats with users using the configured LLM.
-- **Welcome Message**: Automatically sends a welcome message (from `wechat_publisher/welcome.md`) to new subscribers.
-- **Safe Mode**: Supports WeChat's encryption/decryption (AES).
+*Note: For complete setup context, see [`README-SETUP.md`](./README-SETUP.md).*
 
 ---
 
-## 4. Configuration
+## 4. Deployment
 
-### Environment Variables (`.env`)
-
-#### WeChat Credentials
-- `APPID`: WeChat App ID
-- `SECRET`: WeChat App Secret
-- `WECHAT_TOKEN`: Token for server verification
-- `WECHAT_AES_KEY`: EncodingAESKey for message encryption
-
-#### OpenRouter / LLM
-- `OPENROUTER_API_KEY`: API Key
-- `TEXT_MODEL`: Default model (e.g., `google/gemini-2.5-flash`)
-- `TEXT_MODEL_LITE`: Fast model for chat (e.g., `google/gemini-2.5-flash-lite`)
-- `TEXT_MODEL_PRO`: Powerful model (e.g., `google/gemini-3-pro-preview`)
-
-#### Database (PostgreSQL)
-- `POSTGRES_HOST`: DB Host (default: `animagent-postgres` in docker, `localhost` for local script)
-- `POSTGRES_PORT`: DB Port (default: `5432` / `5010`)
-- `POSTGRES_DB`: Database Name
-- `POSTGRES_USER`: Database User
-- `POSTGRES_PASSWORD`: Database Password
-
-#### Service Config
-- `ADMIN_API_KEY`: Key for securing the Publish API.
-- `REDIS_URL`: (Optional) For token caching.
-
----
-
-## 5. Development & Deployment Guide
-
-### A. One-Click Deployment (Recommended)
-**Target Server**: `animagent.ai` (Production)
-We provide a script `deployment.sh` that handles syncing code, updating config, building, and restarting the service on the remote server.
-
-**Creating a new deployment**:
-Always use this script to deploy changes to the production server. Do not try to run manual docker commands unless debugging.
-
+### Using Docker Compose
+1. Copy `.env.example` to `.env` and set `ADMIN_API_KEY`.
+2. Run Docker Compose:
 ```bash
-# From local project root
-./deployment.sh
+docker-compose up -d --build
 ```
+The service will start on port `5006` internally.
 
-### B. Manual Deployment Credentials
-Ensure you have the SSH key (`animagent.pem`) to access the server.
+### Production Script
+If deploying to the MacroAlpha infrastructure, simply use the deployment script:
 ```bash
-ssh -i /Users/lgg/coding/credentials/animagent.pem ubuntu@animagent.ai
+./deploy.sh
 ```
-
-### C. Manual Update Procedure
-If you cannot use the script:
-
-1.  **Sync Code to Server**:
-    Use `rsync` to upload changed files.
-    ```bash
-    rsync -avz -e "ssh -i /Users/lgg/coding/credentials/animagent.pem" \
-        /Users/lgg/coding/wechat/wechat-public-account/ \
-        ubuntu@animagent.ai:/home/ubuntu/coding/wechat-public-account/ \
-        --exclude 'test*.py' \
-        --exclude '__pycache__' \
-        --exclude '.git'
-    ```
-
-2.  **Rebuild & Restart Service (On Server)**:
-    SSH into the server and run (ensure you are in the correct directory matching `docker-compose.yml`):
-    ```bash
-    ssh -i "/Users/lgg/coding/credentials/animagent.pem" ubuntu@animagent.ai 'docker restart wechat-publisher'
-    ```
-
-3.  **Logs**:
-    ```bash
-    docker logs -f wechat-publisher
-    ```
+This script ensures isolated environments and excludes local `.env` syncing to protect production deployments.

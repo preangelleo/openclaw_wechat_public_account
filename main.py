@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 from wechat_publisher import wechat_public_article, wechat_media_publish, draft_manager
 
-# Load env for ADMIN_API_KEY
+# Load env for ADMIN_API_KEY (Deployment Gateway Security Only)
 load_dotenv()
 
 # Configure logging
@@ -42,6 +42,14 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
         detail="Could not validate credentials"
     )
 
+class CredentialsDict(BaseModel):
+    wx_appid: str = Field(..., description="WeChat App ID")
+    wx_secret: str = Field(..., description="WeChat App Secret")
+    wx_token: Optional[str] = Field(None, description="WeChat Token for Webhooks")
+    wx_aes_key: Optional[str] = Field(None, description="WeChat AES Key for Webhooks")
+    openrouter_api_key: Optional[str] = Field(None, description="OpenRouter API Key for Markdown parsing and chat")
+    db_url: Optional[str] = Field(None, description="PostgreSQL or Redis URL for state/sync")
+
 class ImageItem(BaseModel):
     image_index: int = Field(0, description="Index of the image.")
     image_type: str = Field(..., pattern="^(url|base64|path)$", description="Source type.")
@@ -73,6 +81,9 @@ class UnifiedPublishRequest(BaseModel):
     title: str = Field("", description="Title (Required for Article/Video).")
     introduction: str = Field("", description="Introduction (Required for Video).")
     media_source: Optional[ImageItem] = Field(None, description="Media source info (For single media publish).")
+    
+    # Credentials
+    credentials: CredentialsDict = Field(..., description="Dynamic credentials for operations.")
 
 @app.post("/publish", dependencies=[Depends(get_api_key)])
 async def publish_endpoint(request: UnifiedPublishRequest):
@@ -103,7 +114,11 @@ async def publish_endpoint(request: UnifiedPublishRequest):
                 use_llm_parser=request.use_llm_parser,
                 audio_url=request.audio_url,
                 audio_size=request.audio_size,
-                audio_duration=request.audio_duration
+                audio_duration=request.audio_duration,
+                wx_appid=request.credentials.wx_appid,
+                wx_secret=request.credentials.wx_secret,
+                openrouter_api_key=request.credentials.openrouter_api_key,
+                db_url=request.credentials.db_url
             )
         else:
             # Media Publish
@@ -115,7 +130,10 @@ async def publish_endpoint(request: UnifiedPublishRequest):
                 media_type=request.publish_type,
                 media_data=media_data,
                 title=request.title,
-                introduction=request.introduction
+                introduction=request.introduction,
+                wx_appid=request.credentials.wx_appid,
+                wx_secret=request.credentials.wx_secret,
+                db_url=request.credentials.db_url
             )
             
         if not result['status']:
@@ -128,13 +146,13 @@ async def publish_endpoint(request: UnifiedPublishRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/approve")
-async def approve_publish(media_id: str, key: str):
+async def approve_publish(media_id: str, key: str, wx_appid: str, wx_secret: str, db_url: str = None):
     EXPECTED_KEY = "secret_approval_key"
     if key != EXPECTED_KEY:
          return {"status": "error", "message": "Invalid Approval Key"}
          
     try:
-        publish_id = draft_manager.publish_draft(media_id)
+        publish_id = draft_manager.publish_draft(wx_appid, wx_secret, media_id, db_url)
         return {"status": "success", "publish_id": publish_id}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -152,28 +170,10 @@ from wechat_publisher.router import router as wechat_bot_router
 app.include_router(wechat_bot_router, tags=["WeChat Bot"])
 
 # Scheduler Configuration (Hourly Sync)
-from apscheduler.schedulers.background import BackgroundScheduler
-from wechat_publisher.sync_service import sync_service
-
-scheduler = BackgroundScheduler()
-
-@app.on_event("startup")
-def start_scheduler():
-    # Run sync every 1 hour
-    # We use 'interval' trigger. 
-    # Also run once on startup? Usually good to check immediately, 
-    # but to avoid slowing down startup, we let scheduler handle it.
-    # User requested: "每個小時讀取一次".
-    
-    # We add the job.
-    scheduler.add_job(sync_service.sync_recent_articles, 'interval', hours=1, kwargs={"limit": 10}, id="wechat_article_sync")
-    scheduler.start()
-    logger.info("Scheduler started. Hourly article sync active.")
-
-@app.on_event("shutdown")
-def stop_scheduler():
-    scheduler.shutdown()
-    logger.info("Scheduler shut down.")
+# To keep the service stateless, automated background syncing that relies on globally loaded credentials
+# is removed from the Open Source entrypoint, as it requires a specific account's credentials.
+# Users who want syncing should execute a sync script passing their credentials.
+logger.info("Stateless mode: Auto-sync background scheduler disabled. Pass db_url to endpoints if sync context is desired during operations.")
 
 if __name__ == "__main__":
     import uvicorn

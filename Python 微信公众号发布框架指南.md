@@ -2,6 +2,9 @@
 https://developers.weixin.qq.com/doc/oplatform/open/intro.html
 appid and secret alread in [/Users/lgg/coding/wechat/wechat-public-account/.env](.env)
 
+微信公众号自动化发布设置地址 https://developers.weixin.qq.com/platform
+
+
 ## **1\. 执行摘要**
 
 在企业数字化转型的浪潮中，内容分发机制的自动化已成为提升运营效率的关键环节。微信公众号（WeChat Official Account）作为中国市场最核心的流量入口和信息触点，其生态系统的封闭性与复杂性为开发者提出了独特的挑战。从早期的手动图文编辑到如今基于 API 的程序化发布，技术架构经历了数次迭代。本报告旨在为系统架构师、全栈开发者及技术决策者提供一份详尽的、字数达两万字级别的深度技术指南，全面解析利用 Python 语言构建微信公众号自动化发布系统的全链路实现细节。

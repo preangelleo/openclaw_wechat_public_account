@@ -8,21 +8,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DB_NAME = os.getenv("POSTGRES_DB", "animagent_backend_api")
-DB_USER = os.getenv("POSTGRES_USER", "animagent_admin")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "BD_H_-nYH6dXBzZRt8Py2YQdPkhqNhYt")
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5010")
-
-def get_db_connection():
+def get_db_connection(db_url: str):
+    if not db_url:
+        return None
     try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASS,
-            host=DB_HOST,
-            port=DB_PORT
-        )
+        conn = psycopg2.connect(db_url)
         return conn
     except Exception as e:
         err_msg = f"DB Connection failed: {e}"
@@ -30,13 +20,17 @@ def get_db_connection():
         print(f"CRITICAL: {err_msg}", file=sys.stderr) # Force Output
         return None
 
-def log_message(openid: str, content: str, msg_type: str = "text", direction: str = "MO"):
+def log_message(openid: str, content: str, msg_type: str = "text", direction: str = "MO", db_url: str = None):
     """
     Logs a message to DB.
     direction: 'MO' (User Sent) or 'MT' (Reply/Bot Sent)
     """
     print(f"Attempting to log message: {direction} from {openid}", file=sys.stdout) # Debug
-    conn = get_db_connection()
+    if not db_url:
+        print("Log skipped: No DB Connection URL provided", file=sys.stderr)
+        return
+        
+    conn = get_db_connection(db_url)
     if not conn:
         print("Log skipped: No DB Connection", file=sys.stderr)
         return

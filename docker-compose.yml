@@ -1,18 +1,14 @@
 services:
-  wechat-publisher:
+  openclaw-wechat:
     build: .
-    container_name: wechat-publisher
+    container_name: openclaw-wechat
     ports:
-      - "5015:5015"
-    environment:
-      - REDIS_URL=redis://animagent-redis:6379
-      - POSTGRES_HOST=animagent-postgres
-      - POSTGRES_PORT=5432
+      - "5006:5015"
     env_file:
       - .env
     restart: unless-stopped
     networks:
-      - animagent-network
+      - macroalpha-network
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:5015/health || exit 1" ]
       interval: 30s
@@ -20,5 +16,5 @@ services:
       retries: 3
 
 networks:
-  animagent-network:
+  macroalpha-network:
     external: true

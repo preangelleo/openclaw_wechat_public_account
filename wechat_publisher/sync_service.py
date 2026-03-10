@@ -1,47 +1,33 @@
 import logging
 import requests
 import json
-import os
 import time
 import psycopg2
 from typing import List, Dict, Optional
 from .token_manager import token_manager
-from .config import WECHAT_APPID
 
 logger = logging.getLogger(__name__)
 
-# Database Config (Reused for simplicity, should be in config but env vars are global)
-# Database Config
-DB_NAME = os.getenv("POSTGRES_DB", "animagent_backend_api")
-DB_USER = os.getenv("POSTGRES_USER", "animagent_admin")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "BD_H_-nYH6dXBzZRt8Py2YQdPkhqNhYt")
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5010")
-
-def get_db_connection():
+def get_db_connection(db_url: str):
+    if not db_url:
+        return None
     try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASS,
-            host=DB_HOST,
-            port=DB_PORT
-        )
+        conn = psycopg2.connect(db_url)
         return conn
     except Exception as e:
-        logger.error(f"DB Connection failed to {host}:{port}: {e}")
+        logger.error(f"DB Connection failed: {e}")
         return None
 
 class ArticleSyncService:
     def __init__(self):
         pass
         
-    def get_published_articles(self, offset: int = 0, count: int = 20) -> List[Dict]:
+    def get_published_articles(self, appid: str, secret: str, redis_url: str = None, offset: int = 0, count: int = 20) -> List[Dict]:
         """
         Fetch articles using 'material/batchget_material' (Permanent Assets).
         Type = 'news' (Graphic Messages / Articles).
         """
-        token = token_manager.get_token()
+        token = token_manager.get_token(appid, secret, redis_url)
         url = f"https://api.weixin.qq.com/cgi-bin/material/batchget_material?access_token={token}"
         
         payload = {
@@ -116,9 +102,13 @@ class ArticleSyncService:
         conn.commit()
         cursor.close()
 
-    def sync_recent_articles(self, limit: int = 10):
+    def sync_recent_articles(self, appid: str, secret: str, limit: int = 10, db_url: str = None, redis_url: str = None):
         logger.info(f"Starting Article Sync (Limit={limit})...")
-        conn = get_db_connection()
+        if not db_url:
+            logger.warning("No db_url provided for Article Sync. Skipping.")
+            return 0
+            
+        conn = get_db_connection(db_url)
         if not conn:
             return 0
             
@@ -131,7 +121,7 @@ class ArticleSyncService:
                 batch_size = min(20, limit - current_offset)
                 
                 logger.info(f"Fetching batch [Offset: {current_offset}, Count: {batch_size}]...")
-                items = self.get_published_articles(offset=current_offset, count=batch_size)
+                items = self.get_published_articles(appid, secret, redis_url=redis_url, offset=current_offset, count=batch_size)
                 
                 if not items:
                     logger.info("No more items returned from WeChat.")
@@ -204,12 +194,15 @@ class ArticleSyncService:
         logger.info(f"Sync Complete. Added {new_items_count} new articles.")
         return new_items_count
 
-    def search_articles(self, keyword: str) -> List[Dict]:
+    def search_articles(self, keyword: str, db_url: str = None) -> List[Dict]:
         """
         Search articles by keyword (Title or Digest).
         Returns list of top 5 matches.
         """
-        conn = get_db_connection()
+        if not db_url:
+            return []
+            
+        conn = get_db_connection(db_url)
         if not conn:
             return []
             

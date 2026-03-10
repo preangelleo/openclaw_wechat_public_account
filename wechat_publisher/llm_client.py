@@ -1,30 +1,38 @@
 import json
 import logging
 import os
-import logging
 import httpx
 import asyncio
-import json
 from typing import Dict, List, Any
-from .config import OPENROUTER_API_KEY, OPENROUTER_HEADER_SITE_URL, OPENROUTER_HEADER_SITE_NAME, TEXT_MODEL, TEXT_MODEL_LITE, TEXT_MODEL_LIST
 
 logger = logging.getLogger(__name__)
 
+# Defaults if not provided
+DEFAULT_SITE_URL = "https://animagent.ai"
+DEFAULT_SITE_NAME = "Animagent.ai"
+DEFAULT_TEXT_MODEL = "google/gemini-2.5-flash"
+DEFAULT_TEXT_MODEL_LITE = "google/gemini-2.5-flash-lite"
+DEFAULT_TEXT_MODEL_LIST = ["google/gemini-2.5-flash", "google/gemini-3-pro-preview"]
+
+
 class LLMClient:
-    def __init__(self, model=TEXT_MODEL):
-        self.model = model
+    def __init__(self):
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
-        self.headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "HTTP-Referer": OPENROUTER_HEADER_SITE_URL,
-            "X-Title": OPENROUTER_HEADER_SITE_NAME,
+
+    def _get_headers(self, api_key: str):
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": DEFAULT_SITE_URL,
+            "X-Title": DEFAULT_SITE_NAME,
             "Content-Type": "application/json"
         }
 
-    async def process_article_content(self, article_markdown: str) -> List[Dict[str, Any]]:
+    async def process_article_content(self, article_markdown: str, openrouter_api_key: str) -> List[Dict[str, Any]]:
         """
         Converts Markdown content into a structured JSON suitable for WeChat rendering.
         """
+        if not openrouter_api_key:
+            raise ValueError("openrouter_api_key is required for process_article_content")
         # Define JSON Schema for the structured output as requested
         json_schema = {
             "type": "array",
@@ -87,16 +95,18 @@ class LLMClient:
             }
         }
 
-        max_retries = len(TEXT_MODEL_LIST)
+        max_retries = len(DEFAULT_TEXT_MODEL_LIST)
         retry_delay = 1
+        
+        headers = self._get_headers(openrouter_api_key)
 
-        for idx, model_name in enumerate(TEXT_MODEL_LIST):
+        for idx, model_name in enumerate(DEFAULT_TEXT_MODEL_LIST):
             logger.info(f"Step 2: Structuring Content - Attempt {idx + 1}/{max_retries} using model: {model_name}")
             payload["model"] = model_name
             
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=120)
+                    response = await client.post(self.api_url, headers=headers, json=payload, timeout=120)
                 response.raise_for_status()
                 result = response.json()
                 
@@ -119,11 +129,18 @@ class LLMClient:
                 raise
 
 
-    async def get_chat_response(self, user_message: str, history: List[Dict] = None) -> Dict[str, Any]:
+    async def get_chat_response(self, user_message: str, history: List[Dict] = None, openrouter_api_key: str = None) -> Dict[str, Any]:
         """
         NLU Chat with Structured Output.
         Returns Dict with keys: needs_search (bool), search_keywords (str|None), reply_content (str).
         """
+        if not openrouter_api_key:
+             logger.warning("No OpenRouter API key provided, skipping LLM chat call.")
+             return {
+                "needs_search": False,
+                "search_keywords": None,
+                "reply_content": "开发者未配置大模型 API Key，当前为离线模式。"
+             }
         # 1. JSON Schema for NLU
         json_schema = {
             "type": "object",
@@ -203,7 +220,7 @@ class LLMClient:
         messages.append({"role": "user", "content": user_message})
 
         payload = {
-            "model": self.model,
+            "model": DEFAULT_TEXT_MODEL_LITE,
             "messages": messages,
             "response_format": {
                 "type": "json_schema",
@@ -215,9 +232,11 @@ class LLMClient:
             }
         }
         
+        headers = self._get_headers(openrouter_api_key)
+        
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(self.api_url, headers=self.headers, json=payload, timeout=15)
+                response = await client.post(self.api_url, headers=headers, json=payload, timeout=15)
             response.raise_for_status()
             result = response.json()
             content_str = result['choices'][0]['message']['content']

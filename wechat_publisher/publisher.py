@@ -24,7 +24,11 @@ async def wechat_public_article(
     use_llm_parser: bool = False, # Default to False (Regex) for robustness
     audio_url: str = None,
     audio_size: int = None,
-    audio_duration: int = None
+    audio_duration: int = None,
+    wx_appid: str = None,
+    wx_secret: str = None,
+    openrouter_api_key: str = None,
+    db_url: str = None
 ) -> Dict[str, Any]:
     """
     Main SDK function to publish an article to WeChat Public Account.
@@ -58,8 +62,10 @@ async def wechat_public_article(
                         "media_url": audio_url
                     }
                     audio_media_id = media_client.upload_permanent_material(
+                        wx_appid, wx_secret,
                         audio_data, 
-                        material_type="voice"
+                        material_type="voice",
+                        redis_url=db_url
                     )
                     logger.info(f"Audio uploaded successfully. Media ID: {audio_media_id}")
                 except Exception as e:
@@ -83,18 +89,18 @@ async def wechat_public_article(
             idx = img_info.get('image_index')
             try:
                 # Upload for Article Body
-                wechat_url = media_client.upload_image_for_article(img_info)
+                wechat_url = media_client.upload_image_for_article(wx_appid, wx_secret, img_info, redis_url=db_url)
                 image_url_map[idx] = wechat_url
                 
                 # Check if this is the cover
                 if idx == cover_image_index:
                     logger.info(f"Uploading Cover Image (Index: {idx})...")
                     try:
-                        cover_media_id = media_client.upload_permanent_material(img_info)
+                        cover_media_id = media_client.upload_permanent_material(wx_appid, wx_secret, img_info, redis_url=db_url)
                     except Exception as e:
                         logger.warning(f"Permanent material upload failed: {e}. Trying temporary material...")
                         if "48001" in str(e) or "unauthorized" in str(e).lower():
-                            cover_media_id = media_client.upload_temporary_material(img_info)
+                            cover_media_id = media_client.upload_temporary_material(wx_appid, wx_secret, img_info, redis_url=db_url)
                         else:
                             raise e
             except Exception as e:
@@ -106,14 +112,14 @@ async def wechat_public_article(
             logger.warning("No cover image set or found! Using first available image as fallback if possible.")
             if image_url_map and images_list:
                  first_idx = images_list[0]['image_index']
-                 cover_media_id = media_client.upload_permanent_material(images_list[0])
+                 cover_media_id = media_client.upload_permanent_material(wx_appid, wx_secret, images_list[0], redis_url=db_url)
             else:
                  raise Exception("No images provided for cover.")
 
         # 2. Content Structure (Regex vs LLM)
         logger.info(f"Step 2: Structuring Content (LLM Mode: {use_llm_parser})...")
         if use_llm_parser:
-             structured_content = await llm_client.process_article_content(article_markdown)
+             structured_content = await llm_client.process_article_content(article_markdown, openrouter_api_key)
         else:
              # Use robust regex parser
              structured_content = markdown_parser.parse_content(article_markdown)
@@ -125,13 +131,16 @@ async def wechat_public_article(
         # 4. Draft Creation
         logger.info("Step 4: Creating WeChat Draft...")
         draft_media_id = draft_manager.create_draft(
+            appid=wx_appid,
+            secret=wx_secret,
             title=title,
             author=author,
             digest=digest,
             content_html=content_html,
             thumb_media_id=cover_media_id,
             content_source_url=content_source_url,
-            audio_media_id=audio_media_id
+            audio_media_id=audio_media_id,
+            redis_url=db_url
         )
         logger.info(f"Draft Created! Media ID: {draft_media_id}")
         
@@ -144,11 +153,11 @@ async def wechat_public_article(
         # 4.5 Preview
         if preview_wxname:
             logger.info(f"Sending Preview to {preview_wxname}...")
-            draft_manager.send_preview(draft_media_id, preview_wxname)
+            draft_manager.send_preview(appid=wx_appid, secret=wx_secret, media_id=draft_media_id, wxname=preview_wxname, redis_url=db_url)
 
         if preview_email:
             logger.info(f"Sending Email Preview to {preview_email}...")
-            draft_link = draft_manager.get_draft_url(draft_media_id)
+            draft_link = draft_manager.get_draft_url(appid=wx_appid, secret=wx_secret, media_id=draft_media_id, redis_url=db_url)
             if draft_link:
                 base_host = "https://animagent.ai"
                 approval_key = "secret_approval_key"
@@ -164,7 +173,7 @@ async def wechat_public_article(
         # 5. Publish
         if auto_publish:
             logger.info("Step 5: Publishing Draft...")
-            publish_id = draft_manager.publish_draft(draft_media_id)
+            publish_id = draft_manager.publish_draft(appid=wx_appid, secret=wx_secret, media_id=draft_media_id, redis_url=db_url)
             result["publish_id"] = publish_id
             result["message"] = "success_published_pending"
             logger.info(f"Publish Submitted. ID: {publish_id}")
@@ -184,7 +193,10 @@ def wechat_media_publish(
     media_type: str, # image, video, voice
     media_data: Dict[str, Any],
     title: str = "",
-    introduction: str = ""
+    introduction: str = "",
+    wx_appid: str = None,
+    wx_secret: str = None,
+    db_url: str = None
 ) -> Dict[str, Any]:
     """
     Publishes standalone media assets to WeChat (Permanent Material).
@@ -193,10 +205,12 @@ def wechat_media_publish(
     try:
         logger.info(f"Uploading {media_type}...")
         media_id = media_client.upload_permanent_material(
+            wx_appid, wx_secret,
             media_data, 
             material_type=media_type, 
             title=title, 
-            introduction=introduction
+            introduction=introduction,
+            redis_url=db_url
         )
         return {
             "status": True,

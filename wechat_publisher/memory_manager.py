@@ -20,7 +20,7 @@ class MemoryManager:
         # Message format: {"role": "user"|"model", "parts": ["text"]}
         self._cache: Dict[str, List[Dict]] = {}
         
-    def get_context(self, openid: str) -> List[Dict]:
+    def get_context(self, openid: str, db_url: str = None) -> List[Dict]:
         """
         Retrieve context for a user.
         If not in cache, fetch from DB.
@@ -30,18 +30,18 @@ class MemoryManager:
             
         # Cache Miss: Fetch from DB
         logger.info(f"Cache miss for {openid}, fetching from DB...")
-        history = self._fetch_from_db(openid)
+        history = self._fetch_from_db(openid, db_url)
         self._cache[openid] = history
         return history
 
-    def update_context(self, openid: str, content: str, role: str):
+    def update_context(self, openid: str, content: str, role: str, db_url: str = None):
         """
         Update local cache with new message.
         role: 'user' or 'model'
         """
         if openid not in self._cache:
              # Initialize cache first to ensure order
-            self.get_context(openid)
+            self.get_context(openid, db_url=db_url)
             
         # Format for Gemini: {"role": role, "parts": [content]}
         msg_obj = {"role": role, "parts": [content]}
@@ -52,11 +52,14 @@ class MemoryManager:
         if len(self._cache[openid]) > self.max_history:
             self._cache[openid] = self._cache[openid][-self.max_history:]
 
-    def _fetch_from_db(self, openid: str) -> List[Dict]:
+    def _fetch_from_db(self, openid: str, db_url: str = None) -> List[Dict]:
         """
         Fetch last N messages from DB and convert to Gemini format.
         """
-        conn = get_db_connection()
+        if not db_url:
+            return []
+            
+        conn = get_db_connection(db_url)
         if not conn:
             return []
             
