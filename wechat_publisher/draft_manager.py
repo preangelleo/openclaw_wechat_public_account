@@ -170,9 +170,11 @@ class DraftManager:
              final_content = audio_tag + content_html
 
         # Inject Official Account Card (End of Article)
-        account_card_html = self._get_account_card_html()
-        if account_card_html:
-            final_content = final_content + account_card_html
+        # [Open Source Modification]: Commented out hardcoded personal business card.
+        # Users can uncomment and configure `_get_account_card_html()` with their own details if desired.
+        # account_card_html = self._get_account_card_html()
+        # if account_card_html:
+        #     final_content = final_content + account_card_html
 
         article_payload = {
             "title": title,
