@@ -55,6 +55,8 @@ async def wechat_message_handler(
     wx_secret: str = Query(None), # needed if background reply is used
     openrouter_api_key: str = Query(None),
     openrouter_text_model: str = Query(None),
+    bot_persona: str = Query(None),
+    welcome_message: str = Query(None),
     db_url: str = Query(None)
 ):
     """
@@ -66,6 +68,8 @@ async def wechat_message_handler(
     wx_appid = wx_appid or os.getenv("APPID")
     wx_secret = wx_secret or os.getenv("SECRET")
     openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+    bot_persona = bot_persona or os.getenv("BOT_PERSONA")
+    welcome_message = welcome_message or os.getenv("WELCOME_MESSAGE")
 
     if not wx_token or not wx_appid:
         logger.error("Missing required webhook credentials from query string and .env")
@@ -107,7 +111,7 @@ async def wechat_message_handler(
             history = memory_manager.get_context(openid) if hasattr(memory_manager, 'get_context') else []
             
             # 2. Get AI Decision & Response (JSON)
-            nlu_result = await llm_client.get_chat_response(msg.content, history=history, openrouter_api_key=openrouter_api_key, openrouter_text_model=openrouter_text_model)
+            nlu_result = await llm_client.get_chat_response(msg.content, history=history, openrouter_api_key=openrouter_api_key, openrouter_text_model=openrouter_text_model, bot_persona=bot_persona)
             
             # 3. Update Memory (User)
             memory_manager.update_context(openid, msg.content, 'user')
@@ -206,20 +210,25 @@ async def wechat_message_handler(
              # Return a passive XML reply instantly for welcome message
              logger.info(f"New User Subscribed: {msg.source}")
              
-             # Read welcome message from welcome.md
-             try:
-                 current_dir = os.path.dirname(os.path.abspath(__file__))
-                 welcome_path = os.path.join(current_dir, "welcome.md")
-                 
-                 if os.path.exists(welcome_path):
-                     with open(welcome_path, "r", encoding="utf-8") as f:
-                         welcome_content = f.read()
-                 else:
-                     logger.warning(f"welcome.md not found at {welcome_path}")
+             # Prioritize dynamically passed/env welcome message over welcome.md
+             if welcome_message:
+                 logger.info("Using dynamic welcome_message from query/.env")
+                 welcome_content = welcome_message
+             else:
+                 # Read welcome message from welcome.md
+                 try:
+                     current_dir = os.path.dirname(os.path.abspath(__file__))
+                     welcome_path = os.path.join(current_dir, "welcome.md")
+                     
+                     if os.path.exists(welcome_path):
+                         with open(welcome_path, "r", encoding="utf-8") as f:
+                             welcome_content = f.read()
+                     else:
+                         logger.warning(f"welcome.md not found at {welcome_path}")
+                         welcome_content = """感谢您关注本公众号。如果你在使用中遇到任何问题，欢迎随时发送消息寻求帮助。"""
+                 except Exception as e:
+                     logger.error(f"Failed to read welcome.md: {e}")
                      welcome_content = """感谢您关注本公众号。如果你在使用中遇到任何问题，欢迎随时发送消息寻求帮助。"""
-             except Exception as e:
-                 logger.error(f"Failed to read welcome.md: {e}")
-                 welcome_content = """感谢您关注本公众号。如果你在使用中遇到任何问题，欢迎随时发送消息寻求帮助。"""
 
              log_message(msg.source, welcome_content, msg_type='text', direction='MT')
              

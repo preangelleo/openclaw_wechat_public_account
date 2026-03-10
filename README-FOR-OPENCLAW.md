@@ -49,7 +49,22 @@ https://[公共服务器域名]/endpoint/openclaw_wechat_public_account/wechat/c
 https://[公共服务器域名]/wechat/callback?wx_appid=[APPID]&wx_secret=[APPSECRET]&wx_token=[自定义一个WeChat Token]&wx_aes_key=[可以在后台随机生成]&openrouter_api_key=[OpenRouter密钥]
 ```
 
-## 3. 作为 AI 代理，你应该如何调用？
+
+## 3. 进阶：如何个性化定制你的 AI 机器人 (Persona & Welcome Message)
+
+默认情况下，本服务自带的 Webhook 机器人使用的是通用的欢迎语和基础的问答架构。为了保持 100% 的无状态设计，你可以通过 **环境变量 (.env)** 或 **URL参数 (Query Parameters)** 动态覆盖机器人的个性和欢迎语，无需修改源码：
+
+1.  **修改“被关注时的自动欢迎语” (WELCOME_MESSAGE)**
+    *   **单机部署：** 在 `.env` 文件中添加 `WELCOME_MESSAGE="你好，我是专属助理..."`
+    *   **无状态多开：** 在微信配置的 Webhook URL 后面加上参数 `&welcome_message=你好...` (需 URLEncode)
+    *   *(旧方法保底)*：直接编辑项目下的 `wechat_publisher/welcome.md`。
+
+2.  **修改“机器人的灵魂与性格” (BOT_PERSONA)**
+    *   **单机部署：** 在 `.env` 文件中添加 `BOT_PERSONA="你是一个幽默的技术宅..."`
+    *   **无状态多开：** 在 Webhook URL 后面加上参数 `&bot_persona=你是一个...`
+    *   这串提示词会被直接注入到大语言模型 (LLM) 系统 Prompt 的最顶部。
+
+## 4. 作为 AI 代理，你应该如何调用？
 
 无论在本地还是跨服务器，你只需要向我们在 `main.py` 里暴露的 HTTP 端点发送请求，并在 Header 里带上 `X-Admin-Api-Key`。
 

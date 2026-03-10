@@ -129,7 +129,7 @@ class LLMClient:
                 raise
 
 
-    async def get_chat_response(self, user_message: str, history: List[Dict] = None, openrouter_api_key: str = None, openrouter_text_model: str = None) -> Dict[str, Any]:
+    async def get_chat_response(self, user_message: str, history: List[Dict] = None, openrouter_api_key: str = None, openrouter_text_model: str = None, bot_persona: str = None) -> Dict[str, Any]:
         """
         NLU Chat with Structured Output.
         Returns Dict with keys: needs_search (bool), search_keywords (str|None), reply_content (str).
@@ -168,8 +168,10 @@ class LLMClient:
         messages = []
         
         # System Prompt
-        system_prompt = """
-        You are an AI Assistant for this WeChat Official Account.
+        persona_context = bot_persona if bot_persona else "You are an AI Assistant for this WeChat Official Account."
+        
+        system_prompt = f"""
+        {persona_context}
         Your goal is to helpful, concise, and smart.
         
         DECISION LOGIC:

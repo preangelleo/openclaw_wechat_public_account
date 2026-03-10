@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Removed unused parsing functions that depended on global constants.
 
-async def process_user_message_background(openid: str, content: str, appid: str, secret: str, redis_url: str = None, openrouter_api_key: str = None, openrouter_text_model: str = None):
+async def process_user_message_background(openid: str, content: str, appid: str, secret: str, redis_url: str = None, openrouter_api_key: str = None, openrouter_text_model: str = None, bot_persona: str = None):
     """
     1. Call LLM to get response.
     2. Send "Customer Service Message" (Custom Message) to user.
@@ -23,7 +23,7 @@ async def process_user_message_background(openid: str, content: str, appid: str,
     
     try:
         # 1. Get LLM Response
-        ai_response = await llm_client.get_chat_response(content, openrouter_api_key=openrouter_api_key, openrouter_text_model=openrouter_text_model)
+        ai_response = await llm_client.get_chat_response(content, openrouter_api_key=openrouter_api_key, openrouter_text_model=openrouter_text_model, bot_persona=bot_persona)
         
         # 2. Send Custom Message
         await send_custom_message(openid, ai_response, appid=appid, secret=secret, redis_url=redis_url)
