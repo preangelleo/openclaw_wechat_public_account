@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 class DraftManager:
     def __init__(self):
         # Found via inspection of user-edited draft (2025-12-24)
-        self.WECHAT_ACCOUNT_BIZ = "MjM5MzM4MzQwMw==" 
-        self.WECHAT_ACCOUNT_ALIAS = "wanglijie1979"
-        self.WECHAT_ACCOUNT_NICKNAME = "王利杰"
-        self.WECHAT_HEAD_IMG = "http://mmbiz.qpic.cn/mmbiz_png/icktoa6sia2tnWTJ5hrdZ3NTORibqNGvdkEydX2hBKpicVzmSauJriaF7AS5CMoicMzibn0RYWzaV9tiagXIC3lTvHIPtQ/0?wx_fmt=png"
-        self.WECHAT_SIGNATURE = "教你解读市场周期、分析宏观数据，做出高胜率的投资决策。我们也会讨论AI、比特币和全球宏观趋势。"
+        self.WECHAT_ACCOUNT_BIZ = "[YOUR_BIZ_ID_HERE]" 
+        self.WECHAT_ACCOUNT_ALIAS = "[YOUR_WECHAT_ALIAS]"
+        self.WECHAT_ACCOUNT_NICKNAME = "[YOUR_NICKNAME]"
+        self.WECHAT_HEAD_IMG = "http://mmbiz.qpic.cn/..."
+        self.WECHAT_SIGNATURE = "[YOUR_SIGNATURE_HERE]"
 
     def _get_account_card_html(self) -> str:
         """
