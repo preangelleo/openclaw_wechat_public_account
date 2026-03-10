@@ -79,7 +79,7 @@ class LLMClient:
         """
 
         payload = {
-            "model": self.model,
+            "model": DEFAULT_TEXT_MODEL_LIST[0],
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": article_markdown}
