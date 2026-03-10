@@ -21,6 +21,9 @@
 
 由于本项目需要与真实的微信服务器交互，在你进行代码部署前或者部署的同时，你需要请求你的“主人”（人类）前往 **微信公众平台开发者中心** (`https://developers.weixin.qq.com/platform`) 完成以下配置：
 
+![选择公众号](/Users/lgg/coding/macroalpha_projects/openclaw_wechat_public_account/微信开发者平台入口-选择公众号.jpg)
+![服务器配置](/Users/lgg/coding/macroalpha_projects/openclaw_wechat_public_account/域名与消息推送配置.jpg)
+
 ### 2.1 必须从人类那里获取的关键信息 (Keys/IDs)
 在调用本 API 之前，你需要拿到：
 1.  **`wx_appid`**: 微信公众号的 AppID。

@@ -12,3 +12,6 @@ api_log.txt
 
 # OS
 .DS_Store
+
+# Internal Documentation
+README-INTERNAL.md
