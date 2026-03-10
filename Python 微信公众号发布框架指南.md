@@ -4,6 +4,8 @@ appid and secret alread in [/Users/lgg/coding/wechat/wechat-public-account/.env]
 
 微信公众号自动化发布设置地址 https://developers.weixin.qq.com/platform
 
+![选择公众号](/Users/lgg/coding/macroalpha_projects/openclaw_wechat_public_account/微信开发者平台入口-选择公众号.jpg)
+![服务器配置](/Users/lgg/coding/macroalpha_projects/openclaw_wechat_public_account/域名与消息推送配置.jpg)
 
 ## **1\. 执行摘要**
 
