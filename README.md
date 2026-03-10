@@ -3,8 +3,7 @@
 The **OpenClaw WeChat Publisher** is a stateless, containerized microservice API built to automate publishing "image-text" articles (Drafts) and multimedia assets to WeChat Official Accounts. It supports dynamic credential injection, making it safe and easy to deploy as a multi-tenant or open-source service.
 
 ## 📚 General Documentation
-*   **[Setup Guide (README-SETUP.md)](./README-SETUP.md)**: Instructions on how to configure your WeChat Official Account and obtain credentials.
-*   **Internal Logic Flow**: Detailed state machine documents available in `process_logic.md`.
+*   **[OpenClaw AI Integration Guide](./README-FOR-OPENCLAW.md)**: Instructions on how to configure WeChat Official Account credentials, webhooks, and utilize this service as an AI Agent.
 
 ## 1. API Usage
 
@@ -132,7 +131,7 @@ To support stateless multi-tenant deployment, **all decryption keys must be prov
 Example Webhook URL configuration:
 `https://your-server.com/wechat/callback?wx_token=XXX&wx_aes_key=YYY&wx_appid=ZZZ&wx_secret=AAA`
 
-*Note: For complete setup context, see [`README-SETUP.md`](./README-SETUP.md).*
+*Note: For complete setup context, see [`README-FOR-OPENCLAW.md`](./README-FOR-OPENCLAW.md).*
 
 ---
 
