@@ -71,7 +71,7 @@ def publish_article():
             "wx_appid": os.getenv("APPID"),
             "wx_secret": os.getenv("SECRET"),
             "openrouter_api_key": os.getenv("OPENROUTER_API_KEY"),
-            "openrouter_text_model": "anthropic/claude-3-haiku"
+            "openrouter_text_model": "google/gemini-2.5-flash"
         }
     }
 
