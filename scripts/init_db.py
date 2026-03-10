@@ -8,9 +8,9 @@ load_dotenv()
 
 # Database Config from .env
 # Database Config from .env or defaults
-DB_NAME = os.getenv("POSTGRES_DB", "animagent_backend_api")
-DB_USER = os.getenv("POSTGRES_USER", "animagent_admin")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "BD_H_-nYH6dXBzZRt8Py2YQdPkhqNhYt")
+DB_NAME = os.getenv("POSTGRES_DB", "openclaw_wechat_public_account")
+DB_USER = os.getenv("POSTGRES_USER", "openclaw_wechat_public_account")
+DB_PASS = os.getenv("POSTGRES_PASSWORD", "your_db_password_here")
 DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
 DB_PORT = os.getenv("POSTGRES_PORT", "5010")
 
