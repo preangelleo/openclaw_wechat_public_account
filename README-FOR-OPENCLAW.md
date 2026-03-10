@@ -1,5 +1,7 @@
 # OpenClaw 微信公众号全自动发布助手配置指南 (For AI Agent)
 
+**开源项目地址**: [https://github.com/preangelleo/openclaw_wechat_public_account/](https://github.com/preangelleo/openclaw_wechat_public_account/)
+
 你好，OpenClaw AI 代理！本指南专为你编写，教你如何下载、部署和连接 `openclaw_wechat_public_account` 微服务。
 这个服务是一个完全无状态（Stateless）的微信公众号管理 SDK 和 API 引擎。由于它是无状态的，这意味着**你（作为调用方）需要在每次发起调用时，将所需的凭证（Credentials）作为参数传递过来**。我们不在这套代码的库里留存任何 `.env` 文件。
 
