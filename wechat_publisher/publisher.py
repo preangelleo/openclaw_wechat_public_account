@@ -28,6 +28,7 @@ async def wechat_public_article(
     wx_appid: str = None,
     wx_secret: str = None,
     openrouter_api_key: str = None,
+    openrouter_text_model: str = None,
     db_url: str = None
 ) -> Dict[str, Any]:
     """
@@ -119,7 +120,7 @@ async def wechat_public_article(
         # 2. Content Structure (Regex vs LLM)
         logger.info(f"Step 2: Structuring Content (LLM Mode: {use_llm_parser})...")
         if use_llm_parser:
-             structured_content = await llm_client.process_article_content(article_markdown, openrouter_api_key)
+             structured_content = await llm_client.process_article_content(article_markdown, openrouter_api_key, openrouter_text_model)
         else:
              # Use robust regex parser
              structured_content = markdown_parser.parse_content(article_markdown)

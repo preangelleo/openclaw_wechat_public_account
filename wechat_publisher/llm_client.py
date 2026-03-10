@@ -27,7 +27,7 @@ class LLMClient:
             "Content-Type": "application/json"
         }
 
-    async def process_article_content(self, article_markdown: str, openrouter_api_key: str) -> List[Dict[str, Any]]:
+    async def process_article_content(self, article_markdown: str, openrouter_api_key: str, openrouter_text_model: str = None) -> List[Dict[str, Any]]:
         """
         Converts Markdown content into a structured JSON suitable for WeChat rendering.
         """
@@ -79,7 +79,6 @@ class LLMClient:
         """
 
         payload = {
-            "model": DEFAULT_TEXT_MODEL_LIST[0],
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": article_markdown}
@@ -95,12 +94,13 @@ class LLMClient:
             }
         }
 
-        max_retries = len(DEFAULT_TEXT_MODEL_LIST)
+        models_to_try = [openrouter_text_model] if openrouter_text_model else DEFAULT_TEXT_MODEL_LIST
+        max_retries = len(models_to_try)
         retry_delay = 1
         
         headers = self._get_headers(openrouter_api_key)
 
-        for idx, model_name in enumerate(DEFAULT_TEXT_MODEL_LIST):
+        for idx, model_name in enumerate(models_to_try):
             logger.info(f"Step 2: Structuring Content - Attempt {idx + 1}/{max_retries} using model: {model_name}")
             payload["model"] = model_name
             
@@ -129,7 +129,7 @@ class LLMClient:
                 raise
 
 
-    async def get_chat_response(self, user_message: str, history: List[Dict] = None, openrouter_api_key: str = None) -> Dict[str, Any]:
+    async def get_chat_response(self, user_message: str, history: List[Dict] = None, openrouter_api_key: str = None, openrouter_text_model: str = None) -> Dict[str, Any]:
         """
         NLU Chat with Structured Output.
         Returns Dict with keys: needs_search (bool), search_keywords (str|None), reply_content (str).
@@ -220,7 +220,7 @@ class LLMClient:
         messages.append({"role": "user", "content": user_message})
 
         payload = {
-            "model": DEFAULT_TEXT_MODEL_LITE,
+            "model": openrouter_text_model or DEFAULT_TEXT_MODEL_LITE,
             "messages": messages,
             "response_format": {
                 "type": "json_schema",

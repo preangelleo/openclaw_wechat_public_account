@@ -50,6 +50,7 @@ async def wechat_message_handler(
     wx_appid: str = Query(...),
     wx_secret: str = Query(None), # needed if background reply is used
     openrouter_api_key: str = Query(None),
+    openrouter_text_model: str = Query(None),
     db_url: str = Query(None)
 ):
     """
@@ -91,7 +92,7 @@ async def wechat_message_handler(
             history = memory_manager.get_context(openid) if hasattr(memory_manager, 'get_context') else []
             
             # 2. Get AI Decision & Response (JSON)
-            nlu_result = await llm_client.get_chat_response(msg.content, history=history, openrouter_api_key=openrouter_api_key)
+            nlu_result = await llm_client.get_chat_response(msg.content, history=history, openrouter_api_key=openrouter_api_key, openrouter_text_model=openrouter_text_model)
             
             # 3. Update Memory (User)
             memory_manager.update_context(openid, msg.content, 'user')

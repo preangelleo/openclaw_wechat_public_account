@@ -48,6 +48,7 @@ class CredentialsDict(BaseModel):
     wx_token: Optional[str] = Field(None, description="WeChat Token for Webhooks")
     wx_aes_key: Optional[str] = Field(None, description="WeChat AES Key for Webhooks")
     openrouter_api_key: Optional[str] = Field(None, description="OpenRouter API Key for Markdown parsing and chat")
+    openrouter_text_model: Optional[str] = Field(None, description="Optional specific model ID to use on OpenRouter (e.g., 'google/gemini-2.5-flash').")
     db_url: Optional[str] = Field(None, description="PostgreSQL or Redis URL for state/sync")
 
 class ImageItem(BaseModel):
@@ -118,6 +119,7 @@ async def publish_endpoint(request: UnifiedPublishRequest):
                 wx_appid=request.credentials.wx_appid,
                 wx_secret=request.credentials.wx_secret,
                 openrouter_api_key=request.credentials.openrouter_api_key,
+                openrouter_text_model=request.credentials.openrouter_text_model,
                 db_url=request.credentials.db_url
             )
         else:
