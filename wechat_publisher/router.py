@@ -23,11 +23,15 @@ async def wechat_verification(
     timestamp: str = Query(...),
     nonce: str = Query(...),
     echostr: str = Query(...),
-    wx_token: str = Query(..., description="WeChat Token")
+    wx_token: str = Query(None, description="WeChat Token")
 ):
     """
     WeChat Server Verification (GET).
     """
+    wx_token = wx_token or os.getenv("WECHAT_TOKEN")
+    if not wx_token:
+        raise HTTPException(status_code=400, detail="Missing credentials in query and .env")
+
     try:
         check_signature(wx_token, signature, timestamp, nonce)
         return int(echostr) # Must return integer/string directly
@@ -45,9 +49,9 @@ async def wechat_message_handler(
     timestamp: str = Query(...),
     nonce: str = Query(...),
     msg_signature: str = Query(None), # Required for Safe Mode
-    wx_token: str = Query(...),
+    wx_token: str = Query(None),
     wx_aes_key: str = Query(None),
-    wx_appid: str = Query(...),
+    wx_appid: str = Query(None),
     wx_secret: str = Query(None), # needed if background reply is used
     openrouter_api_key: str = Query(None),
     openrouter_text_model: str = Query(None),
@@ -56,6 +60,17 @@ async def wechat_message_handler(
     """
     WeChat Message Receiver (POST).
     """
+    # 0. Environment Variable Fallback
+    wx_token = wx_token or os.getenv("WECHAT_TOKEN")
+    wx_aes_key = wx_aes_key or os.getenv("WECHAT_AES_KEY")
+    wx_appid = wx_appid or os.getenv("APPID")
+    wx_secret = wx_secret or os.getenv("SECRET")
+    openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+
+    if not wx_token or not wx_appid:
+        logger.error("Missing required webhook credentials from query string and .env")
+        raise HTTPException(status_code=400, detail="Missing credentials")
+
     # 1. Read XML Body
     body = await request.body()
     

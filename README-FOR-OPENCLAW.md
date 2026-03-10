@@ -33,14 +33,21 @@
 
 ### 2.3 微信 Webhook/Callback 配置 (如果需要互动机器人功能)
 在这个项目中，我们**包含**了自带的 Webhook Handler (`router.py`)，它的作用是接受用户的聊天信息并给予 AI 智能回复。
-因为我们是无状态服务，微信在后台发送 GET/POST 请求到我们的服务器时**不会带任何凭据**，所以你需要让主人这样配置服务器地址 (URL)：
+因为我们将核心引擎剥离成了无状态服务，通常意味着你向这台服务发起请求时不能依靠本地配置文件找你要密码。但为了兼顾简单的单机部署，我们在 Webhook 服务中内置了 **环境变量回退（Fallback）机制**。
 
-你先向主人确认公共服务器的域名（例如 `https://oc.macroalpha.io/endpoint/openclaw_wechat_public_account`）。
-然后合成一条包含关键凭证的 Query String 链接，让主人填入**服务器配置(URL)**：
+**方法一：单机部署的极简配置（推荐）**
+让主人在这台公共服务器的代码根目录配置好 `.env` 文件（包含 `APPID`, `SECRET`, `WECHAT_TOKEN`, `WECHAT_AES_KEY`, `OPENROUTER_API_KEY`）。
+配置好之后，只需要在微信后台填入最简短的服务器地址即可：
+```text
+https://[公共服务器域名]/endpoint/openclaw_wechat_public_account/wechat/callback
+```
+代码会自动去 `.env` 文件里读取上述鉴权信息拦截和处理微信消息。
+
+**方法二：纯无状态多开的高级配置**
+如果这台服务器上由于某些原因无法配置真实的 `.env`，或者你正要在一台服务器上同时服务 100 个不同的微信账号。你就可以使用超级长链接把凭证直接通过 Query Param “挂”到每次的通信里：
 ```text
 https://[公共服务器域名]/wechat/callback?wx_appid=[APPID]&wx_secret=[APPSECRET]&wx_token=[自定义一个WeChat Token]&wx_aes_key=[可以在后台随机生成]&openrouter_api_key=[OpenRouter密钥]
 ```
-> **注意：** `wx_token` 和 `wx_aes_key` 是你的主人在微信公众平台点击“开启服务器配置”时自己设定的，设定的什么，URL里就拼接什么。我们不需要记录，只需要挂在 URL 上让微信推回来即可。
 
 ## 3. 作为 AI 代理，你应该如何调用？
 
