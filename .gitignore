@@ -26,3 +26,5 @@ wechat_backend_configuration.md
 deploy*.sh
 
 deploy.sh
+
+*deploy*.sh
