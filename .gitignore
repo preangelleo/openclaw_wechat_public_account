@@ -24,3 +24,5 @@ README-SETUP.md
 process_logic.md
 wechat_backend_configuration.md
 deploy*.sh
+
+deploy.sh
