@@ -4,8 +4,8 @@ services:
     container_name: openclaw-wechat
     ports:
       - "5006:5015"
-    env_file:
-      - .env
+    environment:
+      - ADMIN_API_KEY=ag_system_8a3758167e696250ebf7f3d5ae23c8c1ab8c7a5fe3571032c14d77de2b4e25b1
     restart: unless-stopped
     networks:
       - macroalpha-network
